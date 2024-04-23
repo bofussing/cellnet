@@ -1,0 +1,33 @@
+# base environment for all envornments because of the shared structure
+
+name: cellnet
+
+channels:
+- conda-forge
+
+dependencies:
+- python
+
+# running py as ipynb
+- notebook
+- jupytext
+- ipykernel 
+- nbconvert
+
+- numpy
+- scipy
+- matplotlib
+- seaborn
+- pandas
+- scikit-image
+- colorcet
+
+- albumentations
+
+# TODO: maybe replace these
+- segmentation-models-pytorch  # for UNet
+- onnxruntime  # for fg/bg map
+
+- pip
+
+- scikit-learn  # TODO DELETE?
