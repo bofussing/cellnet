@@ -1,5 +1,7 @@
 ## COMMITTED TEST CHANGE
 
+## STASHED TEST CHANGE
+
 
 #!/bin/bash
 
@@ -10,6 +12,62 @@ REPO=sanger
 if [ $# -eq 0 ]; then
   echo TODO implement sync via git sync branch 
   exit 1
+fi
+
+
+push() {
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+
+  # save uncommited changes
+  git stash save 
+
+  # go to sync 
+  git branch sync || git checkout sync
+
+  # merge changes from currently edited branch
+  git merge -Xtheirs "$branch" -m "SYNC: copy state from $branch"
+  git stash apply  # including copying the uncommited changes
+
+  # commit and push
+  git add -A m
+  git commit -m "SYNC: push $branch from $HOSTNAME"
+  git push 
+
+  # got back and restore 
+  git checkout $branch
+  git stash pop
+}
+
+
+pull() {
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+
+  # check if working tree clean
+  if ! git diff-index --quiet HEAD --; then
+    echo "ERROR: working tree is not clean"
+    exit 1
+  fi
+
+  # save uncommited changes
+  git stash save 
+
+  # go to sync 
+  git branch sync || git checkout sync
+
+  # merge changes from currently edited branch
+  git merge -Xtheirs "$branch" -m "SYNC: copy state from $branch"
+  git stash apply  # including copying the uncommited changes
+
+  # commit and push
+  git add -A m
+  git commit -m "SYNC: push $branch from $HOSTNAME"
+  git push 
+
+  # got back and restore 
+  git checkout $branch
+  git stash pop
+}
+
 
   # overwrite 'sync' branch with current working tree
   
@@ -30,7 +88,6 @@ if [ $# -eq 0 ]; then
   git commit -am "sync: push $HOSTNAME"
 
   git status
-fi
 
 
 
