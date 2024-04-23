@@ -1,0 +1,53 @@
+#!/bin/bash
+#SBATCH -J ipynb
+#SBATCH -t 06:59:00
+#SBATCH --ntasks=1
+#SBATCH --mem=40G
+#SBATCH --cpus-per-task=10
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:tesla:1
+#SBATCH --mail-user=benjamin.eckhardt@ut.ee
+#SBATCH -A revvity
+#SBATCH -o results/%j.log # STDOUT
+
+
+STARTTIME="$(date +%y%m%d-%H%M%S)"
+FILE="$1"
+
+NAME="$(basename "$FILE" .py)"
+SUBDIR="$(dirname "$FILE")"   # NOTE this is designed to run in the repo root
+if [ "$SUBDIR" = "" ]; then SUBDIR="."; fi
+ENV="$(basename "$SUBDIR")"
+if [ "$SUBDIR" = "." ]; then ENV="$NAME"; fi
+OUTDIR="./results/$SUBDIR/$NAME"
+WORKING="$SUBDIR/$(sha1sum "$FILE" | cut -c-9).ipynb"
+
+mkdir -p "$OUTDIR"
+
+
+echo -e "  ===  RUNNING  $FILE  ===  \n"
+
+#nvidia-smi
+
+conda=micromamba
+
+$conda shell init --shell=bash           >/dev/null
+eval "$($conda shell hook --shell=bash)" >/dev/null
+$conda activate "$ENV"                   >/dev/null
+
+
+SECONDS=0
+jupytext --to notebook --execute -o "$WORKING" "$FILE"
+
+duration="$SECONDS"
+RUNTIME="$(date -ud "@$duration" +%H%M%S)"
+echo -e "\n> Notebook execution time (hhmmss) $RUNTIME"
+
+RESULT="$OUTDIR/$STARTTIME-$RUNTIME"
+if [ $# = 2 ]; then
+  RESULT="$RESULT-$2"; fi
+RESULT="$RESULT.ipynb"
+
+mv "$WORKING" "$RESULT"
+
+echo "> Saved to $RESULT"

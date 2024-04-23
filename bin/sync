@@ -1,0 +1,58 @@
+## COMMITTED TEST CHANGE
+
+
+#!/bin/bash
+
+LOCAL=~/,
+REMOTE='uthpc:'
+REPO=sanger
+
+if [ $# -eq 0 ]; then
+  echo TODO implement sync via git sync branch 
+  exit 1
+
+  # overwrite 'sync' branch with current working tree
+  
+
+
+  # save local changes
+  git add -A . 
+  git stash save -m 'for sync: stash local changes before pulling remote changes'
+
+  # pull remote changes
+  git pull --rebase
+
+  # reapply local changes
+  git stash pop 
+
+  # push local changes  
+  git add -A .
+  git commit -am "sync: push $HOSTNAME"
+
+  git status
+fi
+
+
+
+for act in "$@"; do
+  if [ "$act" == "push" ] || [ "$act" = "push-overwrite" ]
+  then SRC="$LOCAL/$REPO"; DEST="$REMOTE"
+
+  elif [ "$act" == "pull" ] || [ "$act" != "pull-overwrite" ]
+  then SRC="$REMOTE~/$REPO/results"; DEST="$LOCAL/$REPO"
+  fi
+
+  if [ "$act" == "push" ] || [ "$act" == "pull" ]
+  then
+    rsync -vPzr --executability --filter=':e- .gitignore' --filter "- .git/" \
+      -e ssh "$SRC" "$DEST"
+
+  elif [ "$act" == "push-overwrite" ] || [ "$act" == "pull-overwrite" ]
+  then
+    echo "WARNING: Possibly removing files in $DEST/$REPO!"
+    read -p "  >> are you sure? Cancel with ^C <<  " -n 1 -r  
+    
+    rsync -vPzr --executability --filter=':e- .gitignore' --filter "- .git/" \
+      -e ssh "$SRC" "$DEST" --delete-after 
+  fi
+done
