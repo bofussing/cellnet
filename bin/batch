@@ -1,0 +1,3 @@
+#!/bin/bash
+
+ssh -t eckhardt@rocket.hpc.ut.ee "cd sanger && sbatch bin/ipynb $@"
