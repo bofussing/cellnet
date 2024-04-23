@@ -31,8 +31,6 @@ fi
 
 
 
-
-
 for act in "$@"; do
   if [ "$act" == "push" ] || [ "$act" = "push-overwrite" ]
   then SRC="$LOCAL/$REPO"; DEST="$REMOTE"
