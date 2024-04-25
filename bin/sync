@@ -15,7 +15,7 @@ push() {
   git stash apply  # including copying the uncommited changes
 
   # commit and push
-  git add -A 
+  git add -A .
   git commit -m "SYNC: push $branch from $HOSTNAME"
   git push --set-upstream origin sync
 
