@@ -103,35 +103,45 @@ class CellnetDataset(torch.utils.data.Dataset):
   @staticmethod
   def mk_fgmask(X, thresh=0.01):
     """X: BHWC"""
-    import onnxruntime as ort
-    import numpy as np
+    
+    def doitwithonnx():
+      import onnxruntime as ort
+      import numpy as np
 
-    def get_sess(model_path: str):
-      providers = [
-        ( "CUDAExecutionProvider",
-          { "device_id": 0,
-            "gpu_mem_limit": int(8000 * 1024 * 1024),  # in bytes
-            "arena_extend_strategy": "kSameAsRequested",
-            "cudnn_conv_algo_search": "HEURISTIC",
-            "do_copy_in_default_stream": True,
-        },),
-        "CPUExecutionProvider" ]
-      sess_opts: ort.SessionOptions = ort.SessionOptions()
-      sess_opts.log_severity_level = 2; sess_opts.log_verbosity_level = 2
-      
-      sess = ort.InferenceSession(model_path, providers=providers, sess_options=sess_opts)
-      return sess
+      def get_sess(model_path: str):
+        providers = [
+          ( "CUDAExecutionProvider",
+            { "device_id": 0,
+              "gpu_mem_limit": int(8000 * 1024 * 1024),  # in bytes
+              "arena_extend_strategy": "kSameAsRequested",
+              "cudnn_conv_algo_search": "HEURISTIC",
+              "do_copy_in_default_stream": True,
+          },),
+          "CPUExecutionProvider" ]
+        sess_opts: ort.SessionOptions = ort.SessionOptions()
+        sess_opts.log_severity_level = 2; sess_opts.log_verbosity_level = 2
+  
+        # without these it fails on HPC
+        from multiprocessing import cpu_count 
+        sess_opts.inter_op_num_threads = cpu_count()//6
+        sess_opts.intra_op_num_threads = cpu_count()//6  # help - ask Sten
+        
+        sess = ort.InferenceSession(model_path, providers=providers, sess_options=sess_opts)
+        return sess
 
-    model_path = "data/phaseimaging-combo-v3.onnx"
+      model_path = "data/phaseimaging-combo-v3.onnx"
 
-    X = np.transpose(X,(0,3,1,2))[:,[2,1],:,:].astype(np.float32)  # now BCHW
-    X = (X - X.min()) / (X.max() - X.min()) 
+      X = np.transpose(X,(0,3,1,2))[:,[2,1],:,:].astype(np.float32)  # now BCHW
+      X = (X - X.min()) / (X.max() - X.min()) 
 
-    pred = (sess := get_sess(model_path=model_path)).run(
-      output_names = [out.name for out in sess.get_outputs()], 
-      input_feed   = {sess.get_inputs()[0].name: X})[0]
-    del sess
+      pred = (sess := get_sess(model_path=model_path)).run(
+        output_names = [out.name for out in sess.get_outputs()], 
+        input_feed   = {sess.get_inputs()[0].name: X})[0]
+      del sess
 
-    mask = (pred > thresh).reshape(len(X), *X.shape[2:])
-    return mask
+      mask = (pred > thresh).reshape(len(X), *X.shape[2:])
+      return mask
+  
+    from multiprocessing import cpu_count 
+    return np.zeros_like(X[:,:,:,0]) if cpu_count() > 8 else doitwithonnx()  # TODO: fix onnx for HPC
   
