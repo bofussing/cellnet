@@ -282,6 +282,7 @@ for ti, vi, f, s in runs:
 def plot_predictions():
   for mi, m in enumerate(results.m): 
     m.eval()
+<<<<<<< Updated upstream
 
     for d in iter(mk_dataset([1,2,4], 0)): 
       x = d['image']
@@ -291,15 +292,21 @@ def plot_predictions():
       plt.plot(title=f"model {mi}")
 
 plot_predictions()
+=======
+>>>>>>> Stashed changes
 
-# %%
-def val_accuracies():
-  for i,m in zip([3,1,0], models):
-    m.eval()
-    y = m(X[[i]])
-    z = Z[[i]]
+    for d in iter(dataset := mk_dataset([1,2,4], 0)): 
+      x = d['image']
+      z = d['masks'][0]
 
-    ny = ynorm.un(y).sum().item()
-    nz = ynorm.un(z).sum().item()
-    
-    print(nz, ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
+      y = m(x[None,...])
+      ax = plot.image(cpu(y)[0,0])
+      ax.set_title(f'model {mi}')
+
+      ynorm = dataset.ynorm
+      ny = ynorm.un(y).sum().item()
+      nz = ynorm.un(z).sum().item()
+      
+      print(mi, ': ', nz, ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
+
+plot_predictions()
