@@ -22,12 +22,11 @@ dependencies:
 - scikit-image
 - colorcet
 
-- albumentations
-
 # TODO: maybe replace these
 - segmentation-models-pytorch  # for UNet
 - onnxruntime  # for fg/bg map
 
-- pip
+- pip:
+  - albumentations  # newer version than conda
 
 - scikit-learn  # TODO DELETE?

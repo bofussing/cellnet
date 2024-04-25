@@ -12,6 +12,7 @@ import pandas as pd
 
 import torch
 from torch.utils.data import DataLoader
+
 import albumentations as A  
 from albumentations.pytorch import ToTensorV2
 
@@ -38,31 +39,112 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
 
 # %% # Load Data
 cropsize = 256
-def mk_dataset(ids, pad, transforms=None):
-  return data.CellnetDataset(ids, sigma=5, maxdist=30, pad=cropsize//2, transforms=transforms)  
+
+mk_augs = lambda train:\
+  A.Compose([
+    # A.CropNonEmptyMaskIfExists  # todo replace RandomCrop
+    # if train
+    A.RandomCrop(*(2*[cropsize])) if not train else A.Compose(p=0.9, transforms=[
+      A.RandomSizedCrop(min_max_height=(cropsize//2, cropsize*2), size=2*[cropsize]),
+
+      # domain adaption (we dont use)
+      # A.FDA
+      # A.HistogramMatching
+      # A.PixelDistributionAdaptation(),  
+      
+      # pixel level
+      # NOTE maybe some conflicts with our nice unit variance normalization -> hope the network is OK..
+      A.AdvancedBlur(),
+      A.Blur(),  # too much blur?
+      A.CLAHE(),
+      A.ChannelDropout(),  # too much color?
+      A.ChannelShuffle(),  
+      A.ChromaticAberration(),
+      A.ColorJitter(),
+      A.Defocus(),  # too much blur?
+      A.Downscale(),  # too much blur?
+      A.Emboss(),
+      A.Equalize(),
+      A.FancyPCA(),
+      # FromFloat(),  # idk if it makes sense
+      A.GaussNoise(),
+      A.GaussianBlur(),  # too much blur?
+      A.GlassBlur(),  # too much blur?
+      A.HueSaturationValue(), # too much color?
+      A.ISONoise(),
+      A.ImageCompression(), 
+      A.InvertImg(),  # too much color?
+      A.MedianBlur(),  # too much blur?
+      A.MotionBlur(),  # too much blur?
+      A.MultiplicativeNoise(),  
+      A.Posterize(),  
+      A.RGBShift(),  # too much color?
+      A.RandomBrightnessContrast(),  
+      A.RandomFog(),  # too much car nonsense?
+      A.RandomGamma(),  # too much color?
+      # A.RandomGravel(),  # car nonsense
+      # A.RandomRain(),  # car nonsense
+      # A.RandomShadow(),  # car nonsense
+      # A.RandomSnow(),  # car nonsense
+      # A.RandomSunFlare(),  # maybe just car nonsense
+      A.RandomToneCurve(),  # too much color?
+      A.RingingOvershoot(),  
+      A.Sharpen(),  
+      A.Solarize(),  # too much color?
+      # A.Spatter(),  # no?
+      A.Superpixels(),  
+      # A.TemplateTransform(),  # no
+      # A.ToFloat(),  # idk if it makes sense
+      A.ToGray(),  # too much color?
+      # A.ToRGB(),  
+      A.ToSepia(),  # too much color?
+      A.UnsharpMask(),  
+      A.ZoomBlur(),  # too much blur?
+
+
+      # spatial level (ommited all other crops and resizes)
+      A.Affine(),  # todo: change Nones
+      A.CoarseDropout(),  # evolution of CutOut and RandomErasing
+
+      A.ElasticTransform(),  # NOTE: not with keypoints :[
+      A.GridDistortion(),  # NOTE: not with keypoints :[
+      # A.GridDropout(),  ## redundant with Dropout
+      # A.LongestMaxSize(),  # no sense
+      # A.MaskDropout(),  # no sense
+      # A.Mixup(),  # no reference domain
+      # A.Morphological  # no sense?
+      A.OpticalDistortion(),  # NOTE: not with keypoints :[
+      # A.PadIfNeeded(),  # not needed
+      A.Perspective(),  
+      A.RandomGridShuffle(), 
+      A.Rotate(),
+      # A.SafeRotate(),  # idk
+      # A.XYMasking(),  # redundant with coarse drpotout
+    ]),    
+    #A.Normalize(),  # TODO: set parameters?
+    
+    # spatial level validation
+    A.D4(),  # flips and rotates / including transpose
+
+    ToTensorV2(transpose_mask=True, always_apply=True),
+  ])
+
+trainaugs = mk_augs(True)
+valaugs = mk_augs(False)
+testaugs = A.Compose([
+  ToTensorV2(transpose_mask=True, always_apply=True),
+])
+
+def mk_dataset(ids, pad=cropsize//2, transforms=None):
+  return data.CellnetDataset(ids, sigma=5, maxdist=30, pad=pad, transforms=transforms)  
   # TODO: at inference time, crop back to original size  (should the model do it?)
 
-def mk_loader(ids, bs, transforms, fraction=1, sparsity=1, pad=0):
+def mk_loader(ids, bs, transforms, fraction=1, sparsity=1, pad=cropsize//2):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   #dataset.map(gpu)  # doing this early would be much more efficient to avoid copying data around, because its also so little data. However albumenations wants to work on CPU :[ (use kornia for high perf needs)
   return DataLoader(mk_dataset(ids, pad, transforms), batch_size=bs, shuffle=True,
     persistent_workers=True, pin_memory=True, 
     num_workers = cpu_count() // max(1,gpu_count()))
-
-
-valaugs = A.Compose([
-  A.RandomCrop(*(2*[cropsize])),
-  ToTensorV2(transpose_mask=True, always_apply=True),
-])  #NOTE don't normalize, the dataset handles it currently
-
-trainaugs = A.Compose([
-  A.RandomCrop(*(2*[cropsize])),
-  A.HorizontalFlip(p=0.5),
-  A.VerticalFlip(p=0.5),
-  A.RandomRotate90(p=0.5),
-  A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.5),
-  ToTensorV2(transpose_mask=True, always_apply=True),
-])
 
 # %% # Plot data 
 
@@ -163,8 +245,8 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
 
 
 def do(ti, vi, f, s):
-  traindl = mk_loader(ti, 8, transforms=trainaugment, fraction=f, sparsity=s)
-  valdl   = mk_loader(vi, 1, transforms=valaugment)
+  traindl = mk_loader(ti, 8, transforms=trainaugs, fraction=f, sparsity=s)
+  valdl   = mk_loader(vi, 1, transforms=valaugs)
 
   norms = traindl.dataset.norm()
   valdl.dataset.norm(norms)
@@ -192,25 +274,22 @@ for ti, vi, f, s in runs:
         m = None, ti = ti, vi = vi, f = f, s = s)])
 
 
-
-
-# %% # plot losses
-fig, axs = plt.subplots(2,2, figsize=(15,10))
-
-for ax, (key, text) in zip(axs.flat, key2text.items()):
-  ax.boxplot(stats[key].T)
-  ax.set_title(text)
-  ax.set_xlabel("Training set size")
-
+# %% # plot stats
+# TODO plot losses and accs against s and f each
 
 # %% # Plot the predictions
 
 def plot_predictions():
-  for mi, m in enumerate(models): 
+  for mi, m in enumerate(results.m): 
     m.eval()
-    for i in [0,1,3]:
-      plot.image(cpu(m(X[[i]])[0,0]))
-    plt.plot(title=f"model {mi}")
+
+    for d in iter(mk_dataset([1,2,4], 0)): 
+      x = d['image']
+      y = m(x[None,...])
+      ax = plot.image(cpu(y)[0,0])
+      ax.
+      plt.plot(title=f"model {mi}")
+
 plot_predictions()
 
 # %%
