@@ -10,11 +10,13 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   """Overlay heatmap on image. Color cam be color or color map. Alpha: map value to transparency."""
   from matplotlib.colors import Colormap, ListedColormap 
 
+  if hm.ndim == 4 and hm.shape[0] == 1: hm = hm[0]
   if hm.ndim == 3 and hm.shape[-1] == 1: hm = hm[:,:,0]
-  if hm.ndim == 3 and hm.shape[ 0] == 1: hm = hm[0,:,:]
-  assert hm.ndim == 2, "heatmap must be 2D"
-  
-  hm = ((hm - hm.min()) / (hm.max() - hm.min()) * 255).astype(np.uint8)
+  elif hm.ndim == 3 and hm.shape[ 0] == 1: hm = hm[0,:,:]
+  else: assert hm.ndim == 2, f"Expected 2D heatmap, got shape {hm.shape}."
+
+  hm = hm.astype(np.uint8)
+  hm = ((hm - hm.min()) / (1e-9+ hm.max() - hm.min()) * 255).astype(np.uint8)
 
   alpha = np.vectorize(alpha)(np.linspace(0, 1, 256))
   if not isinstance(color, Colormap): color = ListedColormap(color)
@@ -49,6 +51,7 @@ def image(img, ax=None, zoom=1):
     fig.set_size_inches(img.shape[0]/fig.dpi*zoom, img.shape[1]/fig.dpi*zoom)  
     ax.axis('off')
 
+  img = (img - img.min()) / (1e-9+ img.max() - img.min())
   ax.imshow(img, interpolation='none')
   return ax
 
@@ -57,7 +60,7 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text=None, **u
   if clear: clear_output(wait=True)
 
   _, ax = plt.subplots(figsize=(15,10))
-  ax.set_title(f"Training\n{", ".join([f"{key2text[k]}: {v}" for k,v in [('e', epochs), *info.items()]])}")
+  ax.set_title(f"Training\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
   
   for key in (log if keys is None else keys):
     ax.plot(log[key], label=key2text[key] if key2text else key)
