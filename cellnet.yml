@@ -6,7 +6,7 @@ channels:
 - conda-forge
 
 dependencies:
-- python
+- python #==3.11
 
 # running py as ipynb
 - notebook
@@ -22,11 +22,17 @@ dependencies:
 - scikit-image
 - colorcet
 
+- pytorch
+
+- albumentations # needed in conda and 
+- onnxruntime
+
 # TODO: maybe replace these
 - segmentation-models-pytorch  # for UNet
-- onnxruntime  # for fg/bg map
 
 - pip:
   - albumentations  # newer version than conda
+  - onnxruntime #==1.16  # for fg/bg map
+  - onnxruntime-gpu
 
 - scikit-learn  # TODO DELETE?
