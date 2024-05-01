@@ -13,7 +13,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 
-import albumentations as A  
+import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
 import util.plot as plot
@@ -36,137 +36,121 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
             'f' : 'Fraction of Data',  's' : 'Artificial Sparsity',
             'e' : 'Epoch', 'lr': 'Learning Rate' }
 
-
 # %% # Load Data
-cropsize = 256
+cfg = obj(
+  sigma = 5,
+  maxdist = 26,
+  cropsize = 256,
+  label2int = lambda l:{'Live Cell':1, 'Dead cell/debris':0}[l], 
+)
 
-mk_augs = lambda train:\
-  A.Compose([
-    # A.CropNonEmptyMaskIfExists  # todo replace RandomCrop
-    # if train
-    A.RandomCrop(*(2*[cropsize])) if not train else A.Compose(p=0.9, transforms=[
-      A.RandomSizedCrop(min_max_height=(cropsize//2, cropsize*2), size=2*[cropsize]),
+def mkDataset(ids, transforms=None): return data.CellnetDataset(ids, transforms=transforms, **cfg.__dict__)  
 
-      # domain adaption (we dont use)
-      # A.FDA
-      # A.HistogramMatching
-      # A.PixelDistributionAdaptation(),  
+
+
+# TODO: maybe generate the keypoint mask right in the beginning?
+def mkNorms(norm_using_images = [1,2,4]):
+  ds = mkDataset(norm_using_images)
+  Y = np.stack([data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, 0, 1)(x,[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
+  
+  a={'axis':(0,1,2)}
+  XNorm = lambda **kw: A.Normalize(mean=ds.X.mean(**a)/255, std=ds.X.std(**a)/255, **kw)
+
+  a={'axis':(0,2,3)}
+  ymean, ystd = Y.mean(**a), Y.std(**a)
+  keypoints2heatmap = data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, ymean, ystd)
+
+  [torch.from_numpy(v.astype(np.float32)).to(device) for v in (ymean, ystd)]
+  yunnorm = lambda y: y*ystd + ymean
+
+  return XNorm, keypoints2heatmap, yunnorm
+
+XNorm, keypoints2heatmap, yunnorm = mkNorms()
+
+def mkAugs(mode):
+  kpa = dict(keypoint_params=A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True))
+
+  test = A.Compose([
+    A.ToFloat(),
+    #XNorm(), 
+    ToTensorV2(transpose_mask=True, always_apply=True)], 
+    **kpa)
+
+  aug = A.Compose([
+    A.Compose(p=1, **kpa, transforms=[
+      A.RandomCrop(*(2*[cfg.cropsize])),
+      ]) 
       
-      # pixel level
-      # NOTE maybe some conflicts with our nice unit variance normalization -> hope the network is OK..
+      if mode=='val' else A.Compose(p=0.95, **kpa, transforms=[
+      A.RandomSizedCrop(p=1, min_max_height=(cfg.cropsize//2, cfg.cropsize*2), 
+                          height=cfg.cropsize, width=cfg.cropsize),
+
+      # spatial with keypoints
+      A.CoarseDropout(max_height=cfg.cropsize//3, max_width=cfg.cropsize//3,
+                      min_height=cfg.cropsize//20,min_width=cfg.cropsize//20),  # evolution of CutOut and RandomErasing
+      #A.Perspective(),  
+      A.Rotate(),
+      #A.RandomGridShuffle(), 
+
+      # spatial no keypoints
+      ## A.ElasticTransform(), 
+      ## A.GridDistortion(),  
+      ## A.GridDropout(),  # redundant with Dropout
+      ## A.OpticalDistortion(),  
+      
+      # blur
       A.AdvancedBlur(),
-      A.Blur(),  # too much blur?
-      A.CLAHE(),
+      # TODO - blur colorchannels like different focal planes
+
+      # color
+      A.Equalize(),
+      A.ColorJitter(), 
       A.ChannelDropout(),  # too much color?
       A.ChannelShuffle(),  
-      A.ChromaticAberration(),
-      A.ColorJitter(),
-      A.Defocus(),  # too much blur?
-      A.Downscale(),  # too much blur?
-      A.Emboss(),
-      A.Equalize(),
-      A.FancyPCA(),
-      # FromFloat(),  # idk if it makes sense
+      # A.ChromaticAberration(), # NEEDS python 3.11 - but cannot because of onnxruntime needing old modle
+
+      # noise
       A.GaussNoise(),
-      A.GaussianBlur(),  # too much blur?
-      A.GlassBlur(),  # too much blur?
-      A.HueSaturationValue(), # too much color?
-      A.ISONoise(),
-      A.ImageCompression(), 
-      A.InvertImg(),  # too much color?
-      A.MedianBlur(),  # too much blur?
-      A.MotionBlur(),  # too much blur?
-      A.MultiplicativeNoise(),  
-      A.Posterize(),  
-      A.RGBShift(),  # too much color?
-      A.RandomBrightnessContrast(),  
-      A.RandomFog(),  # too much car nonsense?
-      A.RandomGamma(),  # too much color?
-      # A.RandomGravel(),  # car nonsense
-      # A.RandomRain(),  # car nonsense
-      # A.RandomShadow(),  # car nonsense
-      # A.RandomSnow(),  # car nonsense
-      # A.RandomSunFlare(),  # maybe just car nonsense
-      A.RandomToneCurve(),  # too much color?
-      A.RingingOvershoot(),  
-      A.Sharpen(),  
-      A.Solarize(),  # too much color?
-      # A.Spatter(),  # no?
-      A.Superpixels(),  
-      # A.TemplateTransform(),  # no
-      # A.ToFloat(),  # idk if it makes sense
-      A.ToGray(),  # too much color?
-      # A.ToRGB(),  
-      A.ToSepia(),  # too much color?
-      A.UnsharpMask(),  
-      A.ZoomBlur(),  # too much blur?
+      ]), 
 
+    # TODO D4
+    #XNorm(), 
+    A.ToFloat(),
+    ToTensorV2(transpose_mask=True, always_apply=True), 
+    ])
 
-      # spatial level (ommited all other crops and resizes)
-      A.Affine(),  # todo: change Nones
-      A.CoarseDropout(),  # evolution of CutOut and RandomErasing
+  return test if mode=='test' else aug
+  
 
-      A.ElasticTransform(),  # NOTE: not with keypoints :[
-      A.GridDistortion(),  # NOTE: not with keypoints :[
-      # A.GridDropout(),  ## redundant with Dropout
-      # A.LongestMaxSize(),  # no sense
-      # A.MaskDropout(),  # no sense
-      # A.Mixup(),  # no reference domain
-      # A.Morphological  # no sense?
-      A.OpticalDistortion(),  # NOTE: not with keypoints :[
-      # A.PadIfNeeded(),  # not needed
-      A.Perspective(),  
-      A.RandomGridShuffle(), 
-      A.Rotate(),
-      # A.SafeRotate(),  # idk
-      # A.XYMasking(),  # redundant with coarse drpotout
-    ]),    
-    #A.Normalize(),  # TODO: set parameters?
-    
-    # spatial level validation
-    A.D4(),  # flips and rotates / including transpose
+trainaugs = mkAugs('train')
+valaugs = mkAugs('val')
+testaugs = mkAugs('test')
 
-    ToTensorV2(transpose_mask=True, always_apply=True),
-  ])
-
-trainaugs = mk_augs(True)
-valaugs = mk_augs(False)
-testaugs = A.Compose([
-  ToTensorV2(transpose_mask=True, always_apply=True),
-])
-
-def mk_dataset(ids, pad=cropsize//2, transforms=None):
-  return data.CellnetDataset(ids, sigma=5, maxdist=30, pad=pad, transforms=transforms)  
-  # TODO: at inference time, crop back to original size  (should the model do it?)
-
-def mk_loader(ids, bs, transforms, fraction=1, sparsity=1, pad=cropsize//2):
+def mkLoader(ids, bs, transforms, fraction=1, sparsity=1):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
-  #dataset.map(gpu)  # doing this early would be much more efficient to avoid copying data around, because its also so little data. However albumenations wants to work on CPU :[ (use kornia for high perf needs)
-  return DataLoader(mk_dataset(ids, pad, transforms), batch_size=bs, shuffle=True,
-    persistent_workers=True, pin_memory=True, 
-    num_workers = cpu_count() // max(1,gpu_count()))
+  return DataLoader(mkDataset(ids, transforms), batch_size=bs, shuffle=True,
+    persistent_workers=True, pin_memory=True, num_workers = cpu_count() // max(1,gpu_count()))
 
 # %% # Plot data 
 
 def plot_databatch(batch, ax=None):
-  B = batch['image'], batch['masks'][0], batch['masks'][1]
+  B = batch['image'], batch['masks'][0], batch['masks'][0]#, keypoints2heatmap(**batch)
   B = [cpu(v) for v in B]
-  if len(B[0].shape) == 3: B = [v[None,...] for v in B]
 
-  for x,z,m in zip(*B):
+  for x,m,z in zip(*B):
     ax = plot.image(x, ax=ax)
     plot.heatmap(z, ax=ax, alpha=lambda x: x, color='#ff0000')
     plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.5*x, color='#0000ff')
 
 def plot_grid(grid, **loader_kwargs):
-  loader = mk_loader([1], 1, **loader_kwargs)
-  _, axs = plot.grid(grid, [cropsize]*2)
+  loader = mkLoader([1], 1, **loader_kwargs)
+  _, axs = plot.grid(grid, [cfg.cropsize]*2)
   for ax in axs:
     plot_databatch(next(iter(loader)), ax)
 
-# plot whole unaugment data
-for d in iter(mk_dataset([1,2,4], 0)): 
-  plot_databatch(d)
+for i in [1,2,4]:
+  loader = mkLoader([i], 1, transforms=testaugs)
+  plot_databatch(next(iter(loader)))
 
 plot_grid((3,3), transforms=valaugs)
 plot_grid((3,3), transforms=trainaugs)
@@ -199,15 +183,15 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
   optim = torch.optim.Adam(model.parameters(), lr=lr0)
   sched = torch.optim.lr_scheduler.StepLR(optim, step_size=80, gamma=0.1)
 
-  ynorm = traindl.dataset.norm()[1]
-
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
   for e in range(epochs):
     model.train()
 
     l = 0; a = 0
-    for b, (x,z,m) in enumerate(traindl):
+    for b, B in enumerate(traindl):
       # NOTE: despite batchsize > 3, we can only sample 
+      x,m = B['image'].to(device), B['masks'][0].to(device)
+      z = keypoints2heatmap(**B).to(device)
 
       y = model(x)
       loss = lossf(y,z,m)
@@ -216,7 +200,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
       optim.zero_grad()
 
       l += loss.item()
-      a += (1 - (ynorm.un(y).sum() - (_zcount := ynorm.un(z).sum())).abs() / _zcount).item()
+      a += (1 - (yunnorm(y).sum() - (_zcount := yunnorm(z).sum())).abs() / _zcount).item()
 
     lg = log.loc[e] 
     lg['tl'] = l/(b+1)
@@ -233,7 +217,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
           y = model(x)
 
           l += lossf(y,z,m).item()
-          a += (1 - (ynorm.un(y).sum() - (_zcount := ynorm.un(z).sum())).abs() / _zcount).item()
+          a += (1 - (yunnorm(y).sum() - (_zcount := yunnorm(z).sum())).abs() / _zcount).item()
         
         lg['vl'] = l/(b+1)
         lg['va'] = a/(b+1)
@@ -245,17 +229,14 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
 
 
 def do(ti, vi, f, s):
-  traindl = mk_loader(ti, 8, transforms=trainaugs, fraction=f, sparsity=s)
-  valdl   = mk_loader(vi, 1, transforms=valaugs)
-
-  norms = traindl.dataset.norm()
-  valdl.dataset.norm(norms)
+  traindl = mkLoader(ti, 8, transforms=trainaugs, fraction=f, sparsity=s)
+  valdl   = mkLoader(vi, 1, transforms=valaugs)
 
   model = mk_model()
   log = train(100 if not DRAFT else 10, model, traindl, valdl, 
               info={'f': f'{f:.0%}', 's': f'{s:.0%}'})
   
-  return log
+  return log, model
   
 
 results = pd.DataFrame(columns=['m', 'f', 's', 'ti', 'vi', 'ta', 'va', 'tl', 'vl'])
@@ -265,36 +246,84 @@ runs = [
   ([2,4], [1], 1, 1),
   ([1,4], [2], 1, 1),
   ([1,2], [4], 1, 1),
+
+
+  ([2,4], [1], 0.75, 1),
+  ([1,4], [2], 0.75, 1),
+  ([1,2], [4], 0.75, 1),
+  
+  ([2,4], [1], 0.5, 1),
+  ([1,4], [2], 0.5, 1),
+  ([1,2], [4], 0.5, 1),
+  
+  ([2,4], [1], 0.25, 1),
+  ([1,4], [2], 0.25, 1),
+  ([1,2], [4], 0.25, 1),
+  
+  ([2,4], [1], 0.1, 1),
+  ([1,4], [2], 0.1, 1),
+  ([1,2], [4], 0.1, 1),
+  
+  ([2,4], [1], 0.05, 1),
+  ([1,4], [2], 0.05, 1),
+  ([1,2], [4], 0.05, 1),
+  
+  ([2,4], [1], 0.01, 1),
+  ([1,4], [2], 0.01, 1),
+  ([1,2], [4], 0.01, 1),
+
+
+  ([2,4], [1], 1, 0.75),
+  ([1,4], [2], 1, 0.75),
+  ([1,2], [4], 1, 0.75),
+
+  ([2,4], [1], 1, 0.5),
+  ([1,4], [2], 1, 0.5),
+  ([1,2], [4], 1, 0.5),
+
+  ([2,4], [1], 1, 0.25),
+  ([1,4], [2], 1, 0.25),
+  ([1,2], [4], 1, 0.25),
+
+  ([2,4], [1], 1, 0.1),
+  ([1,4], [2], 1, 0.1),
+  ([1,2], [4], 1, 0.1),
+
+  ([2,4], [1], 1, 0.05),
+  ([1,4], [2], 1, 0.05),
+  ([1,2], [4], 1, 0.05),
+
+  ([2,4], [1], 1, 0.01),
+  ([1,4], [2], 1, 0.01),
+  ([1,2], [4], 1, 0.01),
 ] if not DRAFT else \
-  [([1],[1],1,1)]
+  [([1],[1],0.1,1)]
 
 for ti, vi, f, s in runs:
-  log = do(ti, vi, f, s)
+  log, model = do(ti, vi, f, s)
   results = pd.concat([results, dict(**log.iloc[-1],
-        m = None, ti = ti, vi = vi, f = f, s = s)])
+        m = model if f*s==1 else None, ti = ti, vi = vi, f = f, s = s)], 
+        ignore_index=True)
+  
+# save the results as csv. exclude model column
+results.drop(columns=['m']).to_csv('results/cellnet/results.csv', index=False)
 
 
-# %% # plot stats
-# TODO plot losses and accs against s and f each
+# %% # plot losses
+fig, axs = plt.subplots(2,2, figsize=(15,10))
+
+for ax, (key, text) in zip(axs.flat, key2text.items()):
+  if key in "ta va tl vl".split(' '):
+    ax.boxplot(results[key].T)
+    ax.set_title(text)
+    ax.set_xlabel("Training set size")
+
 
 # %% # Plot the predictions
 
 def plot_predictions():
   for mi, m in enumerate(results.m): 
-    m.eval()
-<<<<<<< Updated upstream
-
-    for d in iter(mk_dataset([1,2,4], 0)): 
-      x = d['image']
-      y = m(x[None,...])
-      ax = plot.image(cpu(y)[0,0])
-      ax.
-      plt.plot(title=f"model {mi}")
-
-plot_predictions()
-=======
->>>>>>> Stashed changes
-
+ 
     for d in iter(dataset := mk_dataset([1,2,4], 0)): 
       x = d['image']
       z = d['masks'][0]
@@ -310,3 +339,5 @@ plot_predictions()
       print(mi, ': ', nz, ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
 
 plot_predictions()
+
+# %%

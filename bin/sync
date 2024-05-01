@@ -34,7 +34,7 @@ pull() {
     exit 1
   fi
 
-  git stash save
+  #git stash save
 
   # TODO ensure sync exists in remote
   # go to sync 
@@ -46,7 +46,7 @@ pull() {
   
   # merge changes from sync into the currently edited branch
   git merge -Xtheirs sync --no-commit
-  git stash pop
+  #git stash pop
 }
 
 if [ "$1" == "push" ]; then
