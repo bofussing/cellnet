@@ -19,13 +19,14 @@ push() {
   # merge changes from currently edited branch without commit
   x git merge -Xtheirs "$branch" --no-commit  
   x git stash apply  # including copying the uncommited changes
+  #git checkout stash@{0} --theirs .  # still on same branch?
 
   # commit and push
   x git add -A .
   x git commit -m "SYNC: push $branch from $HOSTNAME"
   x git push --set-upstream origin sync
 
-  # got back and restore 
+  # go back and restore 
   x git checkout "$branch"
   x git stash pop
 }
