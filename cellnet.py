@@ -333,7 +333,7 @@ def plot_predictions():
     m.eval()
     loader = mkLoader([1,2,4], 1, transforms=testaugs)
 
-    def do(batch, ax=None):
+    def do(m, batch, ax=None):
       y = m(batch['image'].to(device))
       B = batch['image'], batch['masks'][0], y, batch['keypoints'] # keypoints2heatmap(**batch)
       
@@ -348,7 +348,7 @@ def plot_predictions():
         print(mi, ': ', nz, '/', ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
 
     for i in [1,2,4]:
-      do(next(iter(loader)))
+      do(m, next(iter(loader)))
 
 plot_predictions()
 
