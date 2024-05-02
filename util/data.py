@@ -107,7 +107,7 @@ def mk_fgmask(X, thresh=0.01):
       "CPUExecutionProvider" ]
     opts: ort.SessionOptions = ort.SessionOptions()
     opts.log_severity_level = 2; opts.log_verbosity_level = 2
-    #opts.inter_op_num_threads = 1;  opts.intra_op_num_threads = 1  # otherwise will fail on slurm
+    opts.inter_op_num_threads = 1;  opts.intra_op_num_threads = 1  # otherwise will fail on slurm
     return ort.InferenceSession(model_path, providers=providers, sess_options=opts)
   model_path = "data/phaseimaging-combo-v3.onnx"
   X = np.transpose(X,(0,3,1,2))[:,[2,1],:,:].astype(np.float32)  # now BCHW, and only B and G channels
