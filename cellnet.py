@@ -338,8 +338,8 @@ def plot_predictions():
       B = batch['image'], batch['masks'][0], y, batch['keypoints'] # keypoints2heatmap(**batch)
       
       for x,m,y,k in zip(*[cpu(v) for v in B]):
-        ax.set_title(f'model {mi}')
         ax = plot.image(x, ax=ax)
+        ax.set_title(f'model {mi}')
         plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
         plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.15*x, color='#0000ff')
         
