@@ -23,7 +23,7 @@ push() {
 
   # commit and push
   x git add -A .
-  x git commit -m "SYNC: push $branch from $HOSTNAME"
+    git commit -m "SYNC: push $branch from $HOSTNAME"
   x git push --set-upstream origin sync
 
   # go back and restore 
