@@ -19,6 +19,7 @@ push() {
   # merge changes from currently edited branch without commit
   x git merge -Xtheirs "$branch" --no-commit  
   x git stash apply  # including copying the uncommited changes
+  #git checkout stash@{0} --theirs .  # still on same branch?
 
   # commit and push
   x git add -A .
