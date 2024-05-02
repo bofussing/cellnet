@@ -1,27 +1,33 @@
 #!/bin/bash
 
 
+x() {
+  echo
+  echo "❯ $@"
+  $@
+}
+
 push() {
   branch="$(git rev-parse --abbrev-ref HEAD)"
 
   # save uncommited changes
-  git stash save 
+  x git stash save 
 
   # go to sync 
-  git branch sync || git checkout sync
+  x git branch sync || x git checkout sync
 
   # merge changes from currently edited branch without commit
-  git merge -Xtheirs "$branch" --no-commit
-  git stash apply  # including copying the uncommited changes
+  x git merge -Xtheirs "$branch" --no-commit  
+  x git stash apply  # including copying the uncommited changes
 
   # commit and push
-  git add -A .
-  git commit -m "SYNC: push $branch from $HOSTNAME"
-  git push --set-upstream origin sync
+  x git add -A .
+  x git commit -m "SYNC: push $branch from $HOSTNAME"
+  x git push --set-upstream origin sync
 
-  # got back and restore 
-  git checkout "$branch"
-  git stash pop
+  # go back and restore 
+  x git checkout "$branch"
+  x git stash pop
 }
 
 
@@ -38,15 +44,15 @@ pull() {
 
   # TODO ensure sync exists in remote
   # go to sync 
-  git branch sync || git checkout sync
-  git reset  # note that we discard uncommited stuff in the sync branch
-  git pull --set-upstream origin sync
+  x git branch sync || x git checkout sync
+  x git reset  # note that we discard uncommited stuff in the sync branch
+  x git pull --set-upstream origin sync
 
-  git checkout "$branch"
+  x git checkout "$branch"
   
   # merge changes from sync into the currently edited branch
-  git merge -Xtheirs sync --no-commit
-  #git stash pop
+  x git merge -Xtheirs sync --no-commit
+  #x git stash pop
 }
 
 if [ "$1" == "push" ]; then
