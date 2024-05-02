@@ -60,7 +60,7 @@ def mkNorms(norm_using_images = [1,2,4]):
   ymean, ystd = Y.mean(**a), Y.std(**a)
   keypoints2heatmap = data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, ymean, ystd)
 
-  [torch.from_numpy(v.astype(np.float32)).to(device) for v in (ymean, ystd)]
+  ymean, ystd = [torch.from_numpy(v.astype(np.float32)).to(device) for v in (ymean, ystd)]
   yunnorm = lambda y: y*ystd + ymean
 
   return XNorm, keypoints2heatmap, yunnorm
@@ -189,9 +189,12 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
 
     l = 0; a = 0
     for b, B in enumerate(traindl):
-      # NOTE: despite batchsize > 3, we can only sample 
+      # NOTE: despite batchsize > 3, we can only sample <=3 images, as long as the dataset is not circular (todo: make it circular)
       x,m = B['image'].to(device), B['masks'][0].to(device)
-      z = keypoints2heatmap(**B).to(device)
+      z = keypoints2heatmap(**B).to(device).unsqueeze(0)
+
+      [print(v.shape) for v in (x,m)]
+      print()
 
       y = model(x)
       loss = lossf(y,z,m)
@@ -213,7 +216,10 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
       model.eval()
       with torch.no_grad():
         l = 0; a = 0
-        for b, (x,z,m) in enumerate(valdl):
+        for b, B in enumerate(valdl):
+          x,m = B['image'].to(device), B['masks'][0].to(device)
+          z = keypoints2heatmap(**B).to(device).unsqueeze(0)
+
           y = model(x)
 
           l += lossf(y,z,m).item()
@@ -301,11 +307,12 @@ runs = [
 
 for ti, vi, f, s in runs:
   log, model = do(ti, vi, f, s)
-  results = pd.concat([results, dict(**log.iloc[-1],
-        m = model if f*s==1 else None, ti = ti, vi = vi, f = f, s = s)], 
+  results = pd.concat([results, pd.DataFrame(dict(**log.iloc[-1],
+        m = model if f*s==1 or DRAFT else None, ti = ti, vi = vi, f = f, s = s))], 
         ignore_index=True)
   
 # save the results as csv. exclude model column
+import os; os.makedirs('results/cellnet', exist_ok=True)
 results.drop(columns=['m']).to_csv('results/cellnet/results.csv', index=False)
 
 
@@ -322,21 +329,26 @@ for ax, (key, text) in zip(axs.flat, key2text.items()):
 # %% # Plot the predictions
 
 def plot_predictions():
-  for mi, m in enumerate(results.m): 
- 
-    for d in iter(dataset := mk_dataset([1,2,4], 0)): 
-      x = d['image']
-      z = d['masks'][0]
+  for mi, m in enumerate(results.m.dropna()):
+    m.eval()
+    loader = mkLoader([1,2,4], 1, transforms=testaugs)
 
-      y = m(x[None,...])
-      ax = plot.image(cpu(y)[0,0])
-      ax.set_title(f'model {mi}')
-
-      ynorm = dataset.ynorm
-      ny = ynorm.un(y).sum().item()
-      nz = ynorm.un(z).sum().item()
+    def do(m, batch, ax=None):
+      y = m(batch['image'].to(device))
+      B = batch['image'], batch['masks'][0], y, batch['keypoints'] # keypoints2heatmap(**batch)
       
-      print(mi, ': ', nz, ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
+      for x,m,y,k in zip(*[cpu(v) for v in B]):
+        ax.set_title(f'model {mi}')
+        ax = plot.image(x, ax=ax)
+        plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
+        plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.15*x, color='#0000ff')
+        
+        ny = yunnorm(y).sum().item()
+        nz = len(k)
+        print(mi, ': ', nz, '/', ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
+
+    for i in [1,2,4]:
+      do(m, next(iter(loader)))
 
 plot_predictions()
 
