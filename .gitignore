@@ -2,6 +2,7 @@ _thesis
 figures
 COMMIT 
 PLAN
-
+.vscode
+  
 **/__pycache__
 
