@@ -46,42 +46,38 @@ cfg = obj(
 
 def mkDataset(ids, transforms=None): return data.CellnetDataset(ids, transforms=transforms, **cfg.__dict__)  
 
-
-
-# TODO: maybe generate the keypoint mask right in the beginning?
 def mkNorms(norm_using_images = [1,2,4]):
   ds = mkDataset(norm_using_images)
-  Y = np.stack([data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, 0, 1)(x,[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
-  
   a={'axis':(0,1,2)}
   XNorm = lambda **kw: A.Normalize(mean=ds.X.mean(**a)/255, std=ds.X.std(**a)/255, **kw)
 
+  Y = np.stack([data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, 0, 1)(x,[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
   a={'axis':(0,2,3)}
   ymean, ystd = Y.mean(**a), Y.std(**a)
   keypoints2heatmap = data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, ymean, ystd)
 
   ymean, ystd = [torch.from_numpy(v.astype(np.float32)).to(device) for v in (ymean, ystd)]
   yunnorm = lambda y: y*ystd + ymean
-
   return XNorm, keypoints2heatmap, yunnorm
 
 XNorm, keypoints2heatmap, yunnorm = mkNorms()
+
 
 def mkAugs(mode):
   kpa = dict(keypoint_params=A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True))
 
   test = A.Compose([
     A.ToFloat(),
-    #XNorm(), 
+    #XNorm(),  #NOTE TODO fix (also below)
     ToTensorV2(transpose_mask=True, always_apply=True)], 
     **kpa)
 
   aug = A.Compose([
     A.Compose(p=1, **kpa, transforms=[
-      A.RandomCrop(*(2*[cfg.cropsize])),
+      A.RandomCrop(*(2*[cfg.cropsize]), p=1),
       ]) 
       
-      if mode=='val' else A.Compose(p=0.95, **kpa, transforms=[
+      if mode=='val' else A.Compose(p=1, **kpa, transforms=[
       A.RandomSizedCrop(p=1, min_max_height=(cfg.cropsize//2, cfg.cropsize*2), 
                           height=cfg.cropsize, width=cfg.cropsize),
 
@@ -129,12 +125,12 @@ testaugs = mkAugs('test')
 def mkLoader(ids, bs, transforms, fraction=1, sparsity=1):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return DataLoader(mkDataset(ids, transforms), batch_size=bs, shuffle=True,
-    persistent_workers=True, pin_memory=True, num_workers = cpu_count() // max(1,gpu_count()))
+    persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
 
 # %% # Plot data 
 
 def plot_databatch(batch, ax=None):
-  B = batch['image'], batch['masks'][0], batch['masks'][0]#, keypoints2heatmap(**batch)
+  B = batch['image'], batch['masks'][0], batch['masks'][0], keypoints2heatmap(**batch)
   B = [cpu(v) for v in B]
 
   for x,m,z in zip(*B):
@@ -165,18 +161,20 @@ mk_model = lambda: smp.Unet(  # NOTE TODO: check if spefically used model automa
     in_channels=3,
     classes=1,
     activation=None,
-  ).to(device)  # TODO? initialize with normalized weights?
+  ).to(device)  
 mk_model()
 
 
 # %% # Train 
 
-def lossf(y, z, m):
+def lossf(y, z, m, count=False):
   y *= m; z *= m  # mask 
   SE = (y - z)**2 
   MSE = SE.mean()
-  count = (y.sum() - z.sum()) / z.sum()   # TODO opt-in count loss, later in training? normalize with respect to MSE? because rn it seems to disturb training?
-  return MSE #+ count
+
+  C = (y.sum() - z.sum()) / z.sum()   # TODO opt-in count loss, later in training? normalize with respect to MSE? because rn it seems to disturb training?
+  
+  return MSE + (C if count else 0)
 
 def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
   lr0 = 5e-3
@@ -339,10 +337,10 @@ def plot_predictions():
       
       for x,m,y,k in zip(*[cpu(v) for v in B]):
         ax = plot.image(x, ax=ax)
-        ax.set_title(f'model {mi}')
         plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
         plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.15*x, color='#0000ff')
-        
+        plot.image(np.zeros((100,10,3)))  # separator
+
         ny = yunnorm(y).sum().item()
         nz = len(k)
         print(mi, ': ', nz, '/', ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
