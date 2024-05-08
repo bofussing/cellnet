@@ -119,9 +119,9 @@ trainaugs = mkAugs('train')
 valaugs = mkAugs('val')
 testaugs = mkAugs('test')
 
-def mkLoader(ids, bs, transforms, fraction=1, sparsity=1):
+def mkLoader(ids, bs, transforms, fraction=1, sparsity=1, shuffle=True):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
-  return DataLoader(mkDataset(ids, transforms), batch_size=bs, shuffle=True,
+  return DataLoader(mkDataset(ids, transforms), batch_size=bs, shuffle=shuffle,
     persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
 
 # %% # Plot data 
@@ -141,9 +141,8 @@ def plot_grid(grid, **loader_kwargs):
   for ax in axs:
     plot_databatch(next(iter(loader)), ax)
 
-for i in [1,2,4]:
-  loader = mkLoader([i], 1, transforms=testaugs)
-  plot_databatch(next(iter(loader)))
+for batch in mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False):
+  plot_databatch(batch)
 
 plot_grid((3,3), transforms=valaugs)
 plot_grid((3,3), transforms=trainaugs)
@@ -173,8 +172,12 @@ def lossf(y, z, m, count=False):
   
   return MSE + (C if count else 0)
 
-def accuracy(y,z):
-  return (1 - abs(yunnorm(y).sum().item() - (_zcount := yunnorm(z).sum().item())) / _zcount)
+def accuracy(y,z, return_counts=False):
+  ny = yunnorm(y).sum().item()
+  nz = yunnorm(z).sum().item()
+  a = 1 - abs(ny - nz) / nz
+  if return_counts: return ny, nz, a
+  else: return a
 
 def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
   lr0 = 5e-3
@@ -201,7 +204,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
       optim.zero_grad()
 
       l += loss.item()
-      a += accuracy(y,z)
+      a += accuracy(y,z) # type: ignore
 
     lg = log.loc[e] 
     lg['tl'] = l/(b+1)
@@ -221,7 +224,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
           y = model(x)
 
           l += lossf(y,z,m).item()
-          a += accuracy(y,z)
+          a += accuracy(y,z) # type: ignore
         
         lg['vl'] = l/(b+1)
         lg['va'] = a/(b+1)
@@ -326,27 +329,38 @@ for ax, (key, text) in zip(axs.flat, key2text.items()):
 
 # %% # Plot the predictions
 
+def plot_pred(x,m,y,z,k, ax=None):
+  ax = plot.image(x, ax=ax)
+  plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
+  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#0000ff')
+
+def plot_diff(x,m,y,z,k, ax=None):
+  title = f"Difference between Target and Predicted Heatmap"
+  ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
+  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#000000')
+  ax.scatter(k[0], k[1], facecolors='none', edgecolors='black', marker='o', label="point annotations", alpha=0.5, linewidths=1)
+  ax.legend(loc='upper right')
+
 def plot_predictions():
   for mi, m in enumerate(results.m.dropna()):
     m.eval()
-    loader = mkLoader([1,2,4], 1, transforms=testaugs)
+    loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
 
-    def do(m, batch, ax=None):
-      y = m(batch['image'].to(device))
-      B = batch['image'], batch['masks'][0], y, batch['keypoints'] 
+    def do(m, batch):
+      B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), keypoints2heatmap(**batch)
       
-      for x,m,y,k in zip(*[cpu(v) for v in B]):
-        ax = plot.image(x, ax=ax)
-        plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
-        plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.15*x, color='#0000ff')
+      for x,m,y,z,k in zip(*[cpu(v) for v in B]):
+        plot_pred(x,m,y,z,k)
+        plot_diff(x,m,y,z,k)
+        
         plot.image(np.zeros((100,10,3)))  # separator
 
-        ny = yunnorm(y).sum().item()
-        nz = len(k)
-        print(mi, ': ', nz, '/', ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")  # TODO replace with accuracy function if same
+        ny,nz,a = accuracy(y,z, return_counts=True)
+        print('Model', mi, ': ', ny, '/', nz, f"{int(100*abs(a))}%")  # TODO replace with accuracy function if same
 
-    for i in [1,2,4]:
-      do(m, next(iter(loader)))
+        print(k)
+    for batch in loader:
+      do(m, batch)
 
 plot_predictions()
 
