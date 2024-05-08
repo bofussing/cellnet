@@ -1,3 +1,4 @@
+from collections import defaultdict
 import matplotlib.pyplot as plt
 from IPython.display import clear_output
 import numpy as np
@@ -56,7 +57,7 @@ def image(img, ax=None, zoom=1):
   return ax
 
 
-def train_graph(epochs, log, keys=None, clear=False, info={}, key2text=None, **unknown):
+def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unknown):
   if clear: clear_output(wait=True)
 
   _, ax = plt.subplots(figsize=(15,10))
