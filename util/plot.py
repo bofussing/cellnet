@@ -6,6 +6,9 @@ import itertools as it
 
 # this code assumes HWC
 
+ZOOM = 1
+def set_zoom(zoom): global ZOOM; ZOOM = zoom
+
 
 def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   """Overlay heatmap on image. Color cam be color or color map. Alpha: map value to transparency."""
@@ -28,7 +31,7 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
 
 
 
-def grid(grid, shape, zoom=1):
+def grid(grid, shape, zoom=ZOOM):
   w,h = grid
   fig = plt.figure(frameon=False, layout='tight', dpi=1)
   fig.set_size_inches(shape[0]/fig.dpi*zoom*w, shape[1]/fig.dpi*zoom*h) 
@@ -40,10 +43,10 @@ def grid(grid, shape, zoom=1):
 
 
 
-def image(img, ax=None, zoom=1, **imshow_kwargs):
-  assert img.ndim == 2 or (img.ndim == 3 and (img.shape[0] in (3,4) or img.shape[-1] in (3,4))), \
+def image(img, ax=None, zoom=ZOOM, **imshow_kwargs):
+  if img.ndim == 3 and img.shape[0] in (1,3,4): img = np.transpose(img, (1,2,0))
+  assert img.ndim == 2 or (img.ndim == 3 and (img.shape[0] in (1,3,4) or img.shape[-1] in (1,3,4))), \
     f"Plot only 2D gray or RGB(A)-channel-last images. Got shape {img.shape}."
-  if img.ndim == 3 and img.shape[0] in (3,4): img = np.transpose(img, (1,2,0))
 
   if ax == None:
     # no whitespace and 1:1 pixel resolution
