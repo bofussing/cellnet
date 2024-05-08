@@ -40,7 +40,7 @@ def grid(grid, shape, zoom=1):
 
 
 
-def image(img, ax=None, zoom=1):
+def image(img, ax=None, zoom=1, **imshow_kwargs):
   assert img.ndim == 2 or (img.ndim == 3 and (img.shape[0] in (3,4) or img.shape[-1] in (3,4))), \
     f"Plot only 2D gray or RGB(A)-channel-last images. Got shape {img.shape}."
   if img.ndim == 3 and img.shape[0] in (3,4): img = np.transpose(img, (1,2,0))
@@ -53,7 +53,7 @@ def image(img, ax=None, zoom=1):
     ax.axis('off')
 
   img = (img - img.min()) / (1e-9+ img.max() - img.min())
-  ax.imshow(img, interpolation='none')
+  ax.imshow(img, interpolation='none', **imshow_kwargs)
   return ax
 
 
