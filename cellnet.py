@@ -48,72 +48,69 @@ def mkDataset(ids, transforms=None): return data.CellnetDataset(ids, transforms=
 
 def mkNorms(norm_using_images = [1,2,4]):
   ds = mkDataset(norm_using_images)
-  a={'axis':(0,1,2)}
-  XNorm = lambda **kw: A.Normalize(mean=ds.X.mean(**a)/255, std=ds.X.std(**a)/255, **kw)
+  XNorm = lambda **kw: A.Normalize(mean=ds.X.mean(axis=(0,1,2))/255, 
+                                    std=ds.X.std (axis=(0,1,2))/255, **kw)
 
   Y = np.stack([data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, 0, 1)(x,[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
-  a={'axis':(0,2,3)}
-  ymean, ystd = Y.mean(**a), Y.std(**a)
+  ymean, ystd = Y.mean(axis=(0,2,3)), Y.std(axis=(0,2,3))
   keypoints2heatmap = data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, ymean, ystd)
 
-  ymean, ystd = [torch.from_numpy(v.astype(np.float32)).to(device) for v in (ymean, ystd)]
-  yunnorm = lambda y: y*ystd + ymean
+  #ymean, ystd = [torch.from_numpy(v.astype(np.float32)).to(device) for v in (ymean, ystd)]
+  yunnorm = lambda y: y*ystd.item() + ymean.item()
   return XNorm, keypoints2heatmap, yunnorm
 
 XNorm, keypoints2heatmap, yunnorm = mkNorms()
 
 
 def mkAugs(mode):
-  kpa = dict(keypoint_params=A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True))
+  kpp = A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True)
 
   test = A.Compose([
     A.ToFloat(),
     #XNorm(),  #NOTE TODO fix (also below)
     ToTensorV2(transpose_mask=True, always_apply=True)], 
-    **kpa)
+    keypoint_params=kpp)
 
   aug = A.Compose([
-    A.Compose(p=1, **kpa, transforms=[
-      A.RandomCrop(*(2*[cfg.cropsize]), p=1),
-      ]) 
+      *([A.RandomCrop(*(2*[cfg.cropsize]), p=1)]
       
-      if mode=='val' else A.Compose(p=1, **kpa, transforms=[
-      A.RandomSizedCrop(p=1, min_max_height=(cfg.cropsize//2, cfg.cropsize*2), 
+      if mode=='val' else [
+        A.RandomSizedCrop(p=1, min_max_height=(cfg.cropsize//2, cfg.cropsize*2), 
                           height=cfg.cropsize, width=cfg.cropsize),
 
-      # spatial with keypoints
-      A.CoarseDropout(max_height=cfg.cropsize//3, max_width=cfg.cropsize//3,
-                      min_height=cfg.cropsize//20,min_width=cfg.cropsize//20),  # evolution of CutOut and RandomErasing
-      #A.Perspective(),  
-      A.Rotate(),
-      #A.RandomGridShuffle(), 
+        # spatial with keypoints
+        A.CoarseDropout(max_height=cfg.cropsize//3, max_width=cfg.cropsize//3,
+                        min_height=cfg.cropsize//20,min_width=cfg.cropsize//20),  # evolution of CutOut and RandomErasing
+        #A.Perspective(),  
+        A.Rotate(),
+        #A.RandomGridShuffle(), 
 
-      # spatial no keypoints
-      ## A.ElasticTransform(), 
-      ## A.GridDistortion(),  
-      ## A.GridDropout(),  # redundant with Dropout
-      ## A.OpticalDistortion(),  
-      
-      # blur
-      A.AdvancedBlur(),
-      # TODO - blur colorchannels like different focal planes
+        # spatial no keypoints
+        ## A.ElasticTransform(), 
+        ## A.GridDistortion(),  
+        ## A.GridDropout(),  # redundant with Dropout
+        ## A.OpticalDistortion(),  
+        
+        # blur
+        A.AdvancedBlur(),
+        # TODO - blur colorchannels like different focal planes
 
-      # color
-      A.Equalize(),
-      A.ColorJitter(), 
-      A.ChannelDropout(),  # too much color?
-      A.ChannelShuffle(),  
-      # A.ChromaticAberration(), # NEEDS python 3.11 - but cannot because of onnxruntime needing old modle
+        # color
+        A.Equalize(),
+        A.ColorJitter(), 
+        A.ChannelDropout(),  # too much color?
+        A.ChannelShuffle(),  
+        # A.ChromaticAberration(), # NEEDS python 3.11 - but cannot because of onnxruntime needing old modle
 
-      # noise
-      A.GaussNoise(),
+        # noise
+        A.GaussNoise(),
       ]), 
 
     # TODO D4
     #XNorm(), 
     A.ToFloat(),
     ToTensorV2(transpose_mask=True, always_apply=True), 
-    ])
+    ], keypoint_params=kpp)
 
   return test if mode=='test' else aug
   
@@ -130,7 +127,7 @@ def mkLoader(ids, bs, transforms, fraction=1, sparsity=1):
 # %% # Plot data 
 
 def plot_databatch(batch, ax=None):
-  B = batch['image'], batch['masks'][0], batch['masks'][0], keypoints2heatmap(**batch)
+  B = batch['image'], batch['masks'][0], keypoints2heatmap(**batch)
   B = [cpu(v) for v in B]
 
   for x,m,z in zip(*B):
@@ -176,7 +173,10 @@ def lossf(y, z, m, count=False):
   
   return MSE + (C if count else 0)
 
-def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
+def accuracy(y,z):
+  return (1 - abs(yunnorm(y).sum().item() - (_zcount := yunnorm(z).sum().item())) / _zcount)
+
+def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
   lr0 = 5e-3
   optim = torch.optim.Adam(model.parameters(), lr=lr0)
   sched = torch.optim.lr_scheduler.StepLR(optim, step_size=80, gamma=0.1)
@@ -185,7 +185,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
   for e in range(epochs):
     model.train()
 
-    l = 0; a = 0
+    l = 0; a = 0; b = 0
     for b, B in enumerate(traindl):
       # NOTE: despite batchsize > 3, we can only sample <=3 images, as long as the dataset is not circular (todo: make it circular)
       x,m = B['image'].to(device), B['masks'][0].to(device)
@@ -201,7 +201,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
       optim.zero_grad()
 
       l += loss.item()
-      a += (1 - (yunnorm(y).sum() - (_zcount := yunnorm(z).sum())).abs() / _zcount).item()
+      a += accuracy(y,z)
 
     lg = log.loc[e] 
     lg['tl'] = l/(b+1)
@@ -221,7 +221,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
           y = model(x)
 
           l += lossf(y,z,m).item()
-          a += (1 - (yunnorm(y).sum() - (_zcount := yunnorm(z).sum())).abs() / _zcount).item()
+          a += accuracy(y,z)
         
         lg['vl'] = l/(b+1)
         lg['va'] = a/(b+1)
@@ -237,7 +237,7 @@ def do(ti, vi, f, s):
   valdl   = mkLoader(vi, 1, transforms=valaugs)
 
   model = mk_model()
-  log = train(100 if not DRAFT else 10, model, traindl, valdl, 
+  log = train(100 if not DRAFT else 2, model, traindl, valdl, 
               info={'f': f'{f:.0%}', 's': f'{s:.0%}'})
   
   return log, model
@@ -333,7 +333,7 @@ def plot_predictions():
 
     def do(m, batch, ax=None):
       y = m(batch['image'].to(device))
-      B = batch['image'], batch['masks'][0], y, batch['keypoints'] # keypoints2heatmap(**batch)
+      B = batch['image'], batch['masks'][0], y, batch['keypoints'] 
       
       for x,m,y,k in zip(*[cpu(v) for v in B]):
         ax = plot.image(x, ax=ax)
@@ -343,7 +343,7 @@ def plot_predictions():
 
         ny = yunnorm(y).sum().item()
         nz = len(k)
-        print(mi, ': ', nz, '/', ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")
+        print(mi, ': ', nz, '/', ny, f"{int(100 - 100*abs(ny-nz)/nz)}%")  # TODO replace with accuracy function if same
 
     for i in [1,2,4]:
       do(m, next(iter(loader)))
