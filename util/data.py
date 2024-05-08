@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 from scipy.ndimage import gaussian_filter, distance_transform_edt
 
+from sympy import O
 import torch
 
 from collections import defaultdict 
@@ -14,22 +15,27 @@ import albumentations as A
 
 
 class CellnetDataset(torch.utils.data.Dataset):
-  def __init__(self, image_ids, sigma, point_sparsity=1.0, image_fraction=1.0, maxdist=1e9, transforms=None, point_annotations_file='data/points.json', label2int=lambda l:{'Live Cell':1, 'Dead cell/debris':0}[l], **_junk):
+  def __init__(self, image_ids, sigma, sparsity=1.0, fraction=1.0, maxdist=1e9, transforms=None, point_annotations_file='data/points.json', label2int=lambda l:{'Live Cell':1, 'Dead cell/debris':0}[l], **_junk):
     super().__init__()
     self.image_ids=image_ids; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
     self.X = load_images(image_ids)  # NOTE albumentations=BHWC 可是 torch=BCHW
     self.P, self.L = load_points(point_annotations_file, image_ids)
     self.M = mask_sparse(self.X, self.P, self.L, maxdist)
 
-    if (f:=image_fraction) < 1.0: 
-      x,y = int(self.X.shape[0]*f), int(self.X.shape[1]*f)
-      self.X = self.X[:x,:y,...]
-      self.M = self.M[:x,:y,...]
+    if (f:=fraction) < 1.0: 
+      x,y = int(self.X.shape[1]*f), int(self.X.shape[2]*f)
+      self.X = self.X[:,:x,:y,:]
+      self.M = self.M[:,:x,:y,:]
 
-    if (s:=point_sparsity) < 1.0:
+    # filter out all points outside of X
+    for i in range(len(self.X)):
+      self.P[i], self.L[i] = zip(*[((x,y),l) for ((x,y),l) in zip(self.P[i],self.L[i]) if 0 <= x < self.X[i].shape[1] and 0 <= y < self.X[i].shape[0]])
+
+    if (s:=sparsity) < 1.0:
       self.P = [p[::int(1/s)] for p in self.P]
       self.L = [l[::int(1/s)] for l in self.L]
 
+   
   def get(self, n): return getattr(self, n)
   def set(self, n, to): setattr(self, n, to)
 
@@ -42,8 +48,9 @@ class CellnetDataset(torch.utils.data.Dataset):
 
 def Keypoints2Heatmap(sigma, label2int, ymean, ystd):
   def f(image, masks, keypoints, class_labels):
-    if type(class_labels[0]) is tuple: class_labels = [l[0] for l in class_labels]
     hw = image.shape[2:4] if type(image) is torch.Tensor else image.shape[:2]
+    if len(keypoints)==0: return torch.zeros(1,*hw).float()  # no keypoints
+    if type(class_labels[0]) is tuple: class_labels = [l[0] for l in class_labels]
     Y = onehot(hw, [[(x,y) for x,y,*_ in keypoints]], [class_labels], label2int)[0]  # [] = onehot is batched
     for c in range(Y.shape[-1]):
       Y[...,c] = gaussian_filter(Y[...,c], sigma=sigma, mode='constant', cval=0)

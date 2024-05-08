@@ -7,6 +7,7 @@ DRAFT = True
 
 
 import matplotlib.pyplot as plt
+from matplotlib.widgets import SpanSelector
 import numpy as np
 import pandas as pd
 
@@ -16,12 +17,13 @@ from torch.utils.data import DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-import util.plot as plot
-import util.data as data
-
 from collections import defaultdict 
 from types import SimpleNamespace as obj
 import itertools as it
+
+import util.data as data
+import util.plot as plot
+if DRAFT: plot.set_zoom(0.1)
 
 
 CUDA = torch.cuda.is_available()
@@ -44,7 +46,7 @@ cfg = obj(
   label2int = lambda l:{'Live Cell':1, 'Dead cell/debris':0}[l], 
 )
 
-def mkDataset(ids, transforms=None): return data.CellnetDataset(ids, transforms=transforms, **cfg.__dict__)  
+def mkDataset(ids, **dataset_kwargs): return data.CellnetDataset(ids, **dataset_kwargs, **cfg.__dict__)  
 
 def mkNorms(norm_using_images = [1,2,4]):
   ds = mkDataset(norm_using_images)
@@ -65,15 +67,18 @@ XNorm, keypoints2heatmap, yunnorm = mkNorms()
 def mkAugs(mode):
   kpp = A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True)
 
-  test = A.Compose([
+  test = A.Compose(transforms=[
+    A.PadIfNeeded(cfg.cropsize, cfg.cropsize),
     A.ToFloat(),
     #XNorm(),  #NOTE TODO fix (also below)
     ToTensorV2(transpose_mask=True, always_apply=True)], 
     keypoint_params=kpp)
 
   aug = A.Compose([
-      *([A.RandomCrop(*(2*[cfg.cropsize]), p=1)]
-      
+      A.PadIfNeeded(cfg.cropsize*2, cfg.cropsize*2),
+
+      *(
+        [A.RandomCrop(*(2*[cfg.cropsize]), p=1)]
       if mode=='val' else [
         A.RandomSizedCrop(p=1, min_max_height=(cfg.cropsize//2, cfg.cropsize*2), 
                           height=cfg.cropsize, width=cfg.cropsize),
@@ -119,9 +124,9 @@ trainaugs = mkAugs('train')
 valaugs = mkAugs('val')
 testaugs = mkAugs('test')
 
-def mkLoader(ids, bs, transforms, fraction=1, sparsity=1, shuffle=True):
+def mkLoader(ids, bs, transforms, fraction=1 if not DRAFT else 0.1, sparsity=1, shuffle=True):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
-  return DataLoader(mkDataset(ids, transforms), batch_size=bs, shuffle=shuffle,
+  return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity), batch_size=bs, shuffle=shuffle,
     persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
 
 # %% # Plot data 
@@ -133,7 +138,7 @@ def plot_databatch(batch, ax=None):
   for x,m,z in zip(*B):
     ax = plot.image(x, ax=ax)
     plot.heatmap(z, ax=ax, alpha=lambda x: x, color='#ff0000')
-    plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.5*x, color='#0000ff')
+    plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.5*x, color='#111111')
 
 def plot_grid(grid, **loader_kwargs):
   loader = mkLoader([1], 1, **loader_kwargs)
@@ -163,6 +168,7 @@ mk_model()
 
 # %% # Train 
 
+# TODO: apply MESA loss from lempitsky2010learning.  Other losses: research follow-up literature. (xie2016microscopy uses L2 loss)
 def lossf(y, z, m, count=False):
   y *= m; z *= m  # mask 
   SE = (y - z)**2 
@@ -254,7 +260,6 @@ runs = [
   ([1,4], [2], 1, 1),
   ([1,2], [4], 1, 1),
 
-
   ([2,4], [1], 0.75, 1),
   ([1,4], [2], 0.75, 1),
   ([1,2], [4], 0.75, 1),
@@ -280,6 +285,7 @@ runs = [
   ([1,2], [4], 0.01, 1),
 
 
+  # Credit Kaupo: extrapolate sparsity's effect
   ([2,4], [1], 1, 0.75),
   ([1,4], [2], 1, 0.75),
   ([1,2], [4], 1, 0.75),
@@ -332,12 +338,12 @@ for ax, (key, text) in zip(axs.flat, key2text.items()):
 def plot_pred(x,m,y,z,k, ax=None):
   ax = plot.image(x, ax=ax)
   plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
-  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#0000ff')
+  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#111111')
 
 def plot_diff(x,m,y,z,k, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
   ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
-  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#000000')
+  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#111111')
   ax.scatter(k[0], k[1], facecolors='none', edgecolors='black', marker='o', label="point annotations", alpha=0.5, linewidths=1)
   ax.legend(loc='upper right')
 
@@ -347,9 +353,10 @@ def plot_predictions():
     loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
 
     def do(m, batch):
-      B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), keypoints2heatmap(**batch)
+      B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), keypoints2heatmap(**batch), batch['keypoints']
       
       for x,m,y,z,k in zip(*[cpu(v) for v in B]):
+        print(k)
         plot_pred(x,m,y,z,k)
         plot_diff(x,m,y,z,k)
         
@@ -358,7 +365,6 @@ def plot_predictions():
         ny,nz,a = accuracy(y,z, return_counts=True)
         print('Model', mi, ': ', ny, '/', nz, f"{int(100*abs(a))}%")  # TODO replace with accuracy function if same
 
-        print(k)
     for batch in loader:
       do(m, batch)
 
