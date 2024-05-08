@@ -124,7 +124,7 @@ trainaugs = mkAugs('train')
 valaugs = mkAugs('val')
 testaugs = mkAugs('test')
 
-def mkLoader(ids, bs, transforms, fraction=1 if not DRAFT else 0.2, sparsity=1, shuffle=True):
+def mkLoader(ids, bs, transforms, fraction=1 if not DRAFT else 0.3, sparsity=1, shuffle=True):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity), batch_size=bs, shuffle=shuffle,
     persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
