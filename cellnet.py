@@ -3,7 +3,6 @@
 # # CellNet
 
 # %% # Imports 
-DRAFT = True
 
 
 import matplotlib.pyplot as plt
@@ -23,11 +22,13 @@ import itertools as it
 
 import util.data as data
 import util.plot as plot
-if DRAFT: plot.set_zoom(0.1)
-
 
 CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu')
+
+DRAFT = not CUDA
+if DRAFT: plot.set_zoom(0.1)
+
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
 def cpu(x): return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else x
@@ -68,15 +69,14 @@ def mkAugs(mode):
   kpp = A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True)
 
   test = A.Compose(transforms=[
-    A.PadIfNeeded(cfg.cropsize, cfg.cropsize),
+    A.PadIfNeeded(cfg.cropsize*2, cfg.cropsize*2, border_mode=0, value=0),
     A.ToFloat(),
     #XNorm(),  #NOTE TODO fix (also below)
     ToTensorV2(transpose_mask=True, always_apply=True)], 
     keypoint_params=kpp)
 
   aug = A.Compose([
-      A.PadIfNeeded(cfg.cropsize*2, cfg.cropsize*2),
-
+    A.PadIfNeeded(cfg.cropsize*2, cfg.cropsize*2, border_mode=0, value=0),
       *(
         [A.RandomCrop(*(2*[cfg.cropsize]), p=1)]
       if mode=='val' else [
@@ -124,7 +124,7 @@ trainaugs = mkAugs('train')
 valaugs = mkAugs('val')
 testaugs = mkAugs('test')
 
-def mkLoader(ids, bs, transforms, fraction=1 if not DRAFT else 0.1, sparsity=1, shuffle=True):
+def mkLoader(ids, bs, transforms, fraction=1 if not DRAFT else 0.2, sparsity=1, shuffle=True):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity), batch_size=bs, shuffle=shuffle,
     persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
@@ -138,7 +138,7 @@ def plot_databatch(batch, ax=None):
   for x,m,z in zip(*B):
     ax = plot.image(x, ax=ax)
     plot.heatmap(z, ax=ax, alpha=lambda x: x, color='#ff0000')
-    plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.5*x, color='#111111')
+    plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.5*x, color='#000001')
 
 def plot_grid(grid, **loader_kwargs):
   loader = mkLoader([1], 1, **loader_kwargs)
@@ -338,14 +338,13 @@ for ax, (key, text) in zip(axs.flat, key2text.items()):
 def plot_pred(x,m,y,z,k, ax=None):
   ax = plot.image(x, ax=ax)
   plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
-  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#111111')
+  plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.3*x, color='#000001')
 
 def plot_diff(x,m,y,z,k, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
   ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
-  plot.heatmap(m/1, ax=ax, alpha=lambda x: 0.3*x, color='#111111')
-  ax.scatter(k[0], k[1], facecolors='none', edgecolors='black', marker='o', label="point annotations", alpha=0.5, linewidths=1)
-  ax.legend(loc='upper right')
+  plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.3*x, color='#000001')
+  ax.scatter(k[0], k[1], facecolors='none', edgecolors='black', marker='o', alpha=0.5, linewidths=1)
 
 def plot_predictions():
   for mi, m in enumerate(results.m.dropna()):
