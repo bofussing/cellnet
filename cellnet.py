@@ -5,8 +5,8 @@
 # %% # Imports 
 
 
+from math import prod
 import matplotlib.pyplot as plt
-from matplotlib.widgets import SpanSelector
 import numpy as np
 import pandas as pd
 
@@ -27,7 +27,7 @@ CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu')
 
 DRAFT = not CUDA
-if DRAFT: plot.set_zoom(0.1)
+if DRAFT: plot.set_zoom(0.25)
 
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
@@ -44,8 +44,18 @@ cfg = obj(
   sigma = 5,
   maxdist = 26,
   cropsize = 256,
-  label2int = lambda l:{'Live Cell':1, 'Dead cell/debris':0}[l], 
+  label2int = lambda l:{'Live Cell':1, 'Dead cell/debris':2}[l], 
 )
+
+def batched(f):
+  def inner(B):
+    n_masks = len(B['masks'])
+    R= torch.stack([f(
+          image=b[0], masks=[b[m] for m in range(1,n_masks+1)], keypoints=b[n_masks+1], class_labels=b[n_masks+2]
+        ) for b in zip(B['image'], *B['masks'], B['keypoints'], B['class_labels'])
+      ], dim=0)
+    return R
+  return inner
 
 def mkDataset(ids, **dataset_kwargs): return data.CellnetDataset(ids, **dataset_kwargs, **cfg.__dict__)  
 
@@ -54,16 +64,16 @@ def mkNorms(norm_using_images = [1,2,4]):
   XNorm = lambda **kw: A.Normalize(mean=ds.X.mean(axis=(0,1,2))/255, 
                                     std=ds.X.std (axis=(0,1,2))/255, **kw)
 
-  Y = np.stack([data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, 0, 1)(x,[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
+  Y = np.stack([data.Keypoints2Heatmap(cfg.sigma, 0, 1, labels_to_include=[1])(x.transpose(2,0,1),[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
   ymean, ystd = Y.mean(axis=(0,2,3)), Y.std(axis=(0,2,3))
-  keypoints2heatmap = data.Keypoints2Heatmap(cfg.sigma, cfg.label2int, ymean, ystd)
+  keypoints2heatmap = data.Keypoints2Heatmap(cfg.sigma, ymean, ystd, labels_to_include=[1])
+
 
   #ymean, ystd = [torch.from_numpy(v.astype(np.float32)).to(device) for v in (ymean, ystd)]
   yunnorm = lambda y: y*ystd.item() + ymean.item()
   return XNorm, keypoints2heatmap, yunnorm
 
 XNorm, keypoints2heatmap, yunnorm = mkNorms()
-
 
 def mkAugs(mode):
   kpp = A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True)
@@ -76,10 +86,11 @@ def mkAugs(mode):
     keypoint_params=kpp)
 
   aug = A.Compose([
-    A.PadIfNeeded(cfg.cropsize*2, cfg.cropsize*2, border_mode=0, value=0),
-      *(
-        [A.RandomCrop(*(2*[cfg.cropsize]), p=1)]
+      *([A.PadIfNeeded(cfg.cropsize, cfg.cropsize, border_mode=0, value=0),
+         A.RandomCrop(cfg.cropsize, cfg.cropsize, p=1),
+         ]
       if mode=='val' else [
+        A.PadIfNeeded(cfg.cropsize*2, cfg.cropsize*2, border_mode=0, value=0),
         A.RandomSizedCrop(p=1, min_max_height=(cfg.cropsize//2, cfg.cropsize*2), 
                           height=cfg.cropsize, width=cfg.cropsize),
 
@@ -112,8 +123,8 @@ def mkAugs(mode):
       ]), 
 
     # TODO D4
-    #XNorm(), 
     A.ToFloat(),
+    #XNorm(), 
     ToTensorV2(transpose_mask=True, always_apply=True), 
     ], keypoint_params=kpp)
 
@@ -124,30 +135,40 @@ trainaugs = mkAugs('train')
 valaugs = mkAugs('val')
 testaugs = mkAugs('test')
 
-def mkLoader(ids, bs, transforms, fraction=1 if not DRAFT else 0.3, sparsity=1, shuffle=True):
+def debug_collate(S):
+  return dict(
+    image = torch.stack([s['image'] for s in S]),
+    masks = [torch.stack([s['masks'][i] for s in S]) for i in range(len(S[0]['masks']))],
+    keypoints = [s['keypoints'] for s in S],
+    class_labels = [s['class_labels'] for s in S],
+  )
+
+def mkLoader(ids, bs, transforms, fraction=1, sparsity=1, shuffle=True):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
-  return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity), batch_size=bs, shuffle=shuffle,
+  return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity, batch_size=bs), 
+    batch_size=bs, shuffle=shuffle, collate_fn= debug_collate,
     persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
 
 # %% # Plot data 
 
-def plot_databatch(batch, ax=None):
-  B = batch['image'], batch['masks'][0], keypoints2heatmap(**batch)
-  B = [cpu(v) for v in B]
+def plot_overlay(x,m,z, ax=None):
+  ax_was_none = ax==None
+  ax = plot.image(x, ax=ax)
+  plot.heatmap(z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
+  plot.heatmap(m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
+  if ax_was_none: pass# plt.close('all')
 
-  for x,m,z in zip(*B):
-    ax = plot.image(x, ax=ax)
-    plot.heatmap(z, ax=ax, alpha=lambda x: x, color='#ff0000')
-    plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.5*x, color='#000001')
 
 def plot_grid(grid, **loader_kwargs):
   loader = mkLoader([1], 1, **loader_kwargs)
-  _, axs = plot.grid(grid, [cfg.cropsize]*2)
-  for ax in axs:
-    plot_databatch(next(iter(loader)), ax)
+  for B, ax in zip(loader,
+                   plot.grid(grid, [cfg.cropsize]*2)[1],):
+    B = B['image'], B['masks'][0], batched(keypoints2heatmap)(B)
+    plot_overlay(*[cpu(v[0]) for v in B], ax=ax)
+  pass# plt.close('all')
 
-for batch in mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False):
-  plot_databatch(batch)
+for B in mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False):
+  plot_overlay(*[cpu(v[0]) for v in [B['image'], B['masks'][0], batched(keypoints2heatmap)(B)]])
 
 plot_grid((3,3), transforms=valaugs)
 plot_grid((3,3), transforms=trainaugs)
@@ -198,10 +219,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
     for b, B in enumerate(traindl):
       # NOTE: despite batchsize > 3, we can only sample <=3 images, as long as the dataset is not circular (todo: make it circular)
       x,m = B['image'].to(device), B['masks'][0].to(device)
-      z = keypoints2heatmap(**B).to(device).unsqueeze(0)
-
-      [print(v.shape) for v in (x,m)]
-      print()
+      z = batched(keypoints2heatmap)(B).to(device).unsqueeze(0)
 
       y = model(x)
       loss = lossf(y,z,m)
@@ -225,7 +243,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
         l = 0; a = 0
         for b, B in enumerate(valdl):
           x,m = B['image'].to(device), B['masks'][0].to(device)
-          z = keypoints2heatmap(**B).to(device).unsqueeze(0)
+          z = batched(keypoints2heatmap)(B).to(device).unsqueeze(0)
 
           y = model(x)
 
@@ -277,7 +295,7 @@ runs = [
   ([1,2], [4], 0.1, 1),
   
   ([2,4], [1], 0.05, 1),
-  ([1,4], [2], 0.05, 1),
+  ([1,4], [2], 0.05, 1),  
   ([1,2], [4], 0.05, 1),
   
   ([2,4], [1], 0.01, 1),
@@ -335,16 +353,12 @@ for ax, (key, text) in zip(axs.flat, key2text.items()):
 
 # %% # Plot the predictions
 
-def plot_pred(x,m,y,z,k, ax=None):
-  ax = plot.image(x, ax=ax)
-  plot.heatmap(y, ax=ax, alpha=lambda x: x, color='#ff0000')
-  plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.3*x, color='#000001')
-
 def plot_diff(x,m,y,z,k, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
   ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
-  plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.3*x, color='#000001')
+  plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.3*x, color='#000000')
   ax.scatter(k[0], k[1], facecolors='none', edgecolors='black', marker='o', alpha=0.5, linewidths=1)
+  pass# plt.close('all')
 
 def plot_predictions():
   for mi, m in enumerate(results.m.dropna()):
@@ -352,11 +366,11 @@ def plot_predictions():
     loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
 
     def do(m, batch):
-      B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), keypoints2heatmap(**batch), batch['keypoints']
+      B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), batched(keypoints2heatmap)(batch), batch['keypoints']
       
       for x,m,y,z,k in zip(*[cpu(v) for v in B]):
         print(k)
-        plot_pred(x,m,y,z,k)
+        plot_overlay(x,m,z)
         plot_diff(x,m,y,z,k)
         
         plot.image(np.zeros((100,10,3)))  # separator
