@@ -1,4 +1,3 @@
-
 # %% [markdown]
 # # CellNet
 
@@ -367,8 +366,7 @@ def plot_diff(x,m,y,z,k, ax=None):
 def plot_predictions():
   for mi, m in enumerate(results.m.dropna()):
     m.eval()
-    #loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
-    loader = mkLoader([1], 1, transforms=testaugs, shuffle=False)
+    loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
 
     def do(m, batch):
       B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), batched(keypoints2heatmap)(batch), batch['keypoints']
