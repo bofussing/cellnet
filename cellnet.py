@@ -3,8 +3,6 @@
 # # CellNet
 
 # %% # Imports 
-
-
 from math import prod
 import matplotlib.pyplot as plt
 import numpy as np
