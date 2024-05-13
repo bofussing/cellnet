@@ -14,12 +14,16 @@ import json
 import albumentations as A
 
 
+noneor = lambda x, d: x if x is not None else d 
+
 class CellnetDataset(torch.utils.data.Dataset):
-  def __init__(self, image_ids, sigma, sparsity=1.0, fraction=1.0, maxdist=1e9, transforms=None, point_annotations_file='data/points.json', label2int=lambda l:{'Live Cell':1, 'Dead cell/debris':0}[l], **_junk):
+  def __init__(self, image_ids, sigma, sparsity=1.0, fraction=1.0, batch_size=None, maxdist=1e9, transforms=None, point_annotations_file='data/points.json', 
+               label2int=lambda l:{'Live Cell':1, 'Dead cell/debris':2}[l], **_junk):
     super().__init__()
+    self.batch_size = noneor(batch_size, len(image_ids))
     self.image_ids=image_ids; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
     self.X = load_images(image_ids)  # NOTE albumentations=BHWC 可是 torch=BCHW
-    self.P, self.L = load_points(point_annotations_file, image_ids)
+    self.P, self.L = load_points(point_annotations_file, image_ids, label2int)
     self.M = mask_sparse(self.X, self.P, self.L, maxdist)
 
     if (f:=fraction) < 1.0: 
@@ -29,29 +33,32 @@ class CellnetDataset(torch.utils.data.Dataset):
 
     # filter out all points outside of X
     for i in range(len(self.X)):
-      self.P[i], self.L[i] = zip(*[((x,y),l) for ((x,y),l) in zip(self.P[i],self.L[i]) if 0 <= x < self.X[i].shape[1] and 0 <= y < self.X[i].shape[0]])
+      self.P[i], self.L[i] = zip(*[((x,y),l) for ((x,y),l) in 
+                             zip(self.P[i],self.L[i]) if 0 <= x < self.X[i].shape[1] 
+                                                     and 0 <= y < self.X[i].shape[0]])
 
     if (s:=sparsity) < 1.0:
       self.P = [p[::int(1/s)] for p in self.P]
       self.L = [l[::int(1/s)] for l in self.L]
-
    
   def get(self, n): return getattr(self, n)
   def set(self, n, to): setattr(self, n, to)
 
-  def __len__    (self):    return len(self.X)
-  def __getitem__(self, i): return self.transforms(image=self.X[i], masks=[self.M[i]], keypoints=self.P[i], class_labels=self.L[i])
+  def __len__    (self): return max(self.batch_size, len(self.X))
+  def __getitem__(self, i): 
+    i = i % len(self.X)
+    return self.transforms(image=self.X[i], masks=[self.M[i]], keypoints=self.P[i], class_labels=self.L[i])
 
   def map(self, f, dim='XY'):
     for n in dim: self.set(n, f(self.get(n)))
 
-
-def Keypoints2Heatmap(sigma, label2int, ymean, ystd):
+# HWC - this function works not with a batch dimension
+def Keypoints2Heatmap(sigma, ymean, ystd, labels_to_include=[1]):
   def f(image, masks, keypoints, class_labels):
-    hw = image.shape[2:4] if type(image) is torch.Tensor else image.shape[:2]
+    hw = image.shape[1:3] 
     if len(keypoints)==0: return torch.zeros(1,*hw).float()  # no keypoints
-    if type(class_labels[0]) is tuple: class_labels = [l[0] for l in class_labels]
-    Y = onehot(hw, [[(x,y) for x,y,*_ in keypoints]], [class_labels], label2int)[0]  # [] = onehot is batched
+    Y = onehot(hw, [[(x,y) for x,y,*_ in keypoints]], [class_labels])
+    Y = Y[0][:,:,[l-1 for l in labels_to_include]]  # the [B][H,W,[Cs]] form is very important
     for c in range(Y.shape[-1]):
       Y[...,c] = gaussian_filter(Y[...,c], sigma=sigma, mode='constant', cval=0)
     Y = ((Y - ymean) / ystd).astype(np.float32)
@@ -61,7 +68,7 @@ def Keypoints2Heatmap(sigma, label2int, ymean, ystd):
 
 def load_images(ids): return np.stack([cv2.cvtColor(cv2.imread(f'data/{i}.jpg'), cv2.COLOR_BGR2RGB) for i in ids], axis=0)
 
-def load_points(path, ids):
+def load_points(path, ids, l2i):
   P = [[] for _ in ids]; L = [[] for _ in ids]
   for entry in (raw := json.load(open(path))):
     image_id = int(entry['data']['img'].split('/')[-1][9:].split('.')[0])
@@ -73,8 +80,8 @@ def load_points(path, ids):
         y = result['value']['y']/100 * result['original_height']
         l = result['value']['keypointlabels'][0]
         P[i] += [[x,y]]
-        L[i] += [l]
-  return P, L
+        L[i] += [l2i(l)]
+  return [np.array(ps) for ps in P], [np.array(ls) for ls in L]
 
 def mk_norm(x):
   """Z-score norm improves DNN training according to @lecun2002efficient. BWHC"""
@@ -82,22 +89,23 @@ def mk_norm(x):
   s = x.std(axis=(0,1,2), keepdims=True)
   return 
 
-def onehot(hw, P, L, l2c):
-  cs = set([0, *[l2c(l) for ls in L for l in ls]])
+# this function expects a batch dim in P and L
+def onehot(hw, P, L):
+  cs = list(set.union({0}, *[set(ls) for ls in L]))
   A = np.zeros((len(P),*hw, max(cs))) 
   for b in range(len(P)):
     for (x,y), l in zip(P[b], L[b]):
-      A[b, int(y), int(x), l2c(l)-1] = 1
-  return A
+      A[b, int(y), int(x), l-1] = 1
+  return A  # -> BHWC
 
 def mask_sparse(X, P, L, maxdist): 
-  D = onehot(X.shape[1:3], P, L, l2c=lambda x: 1)  # we dont include the points for negative examples but we train on their image parts! :]
-  D = D.sum(axis=-1)  # all types of points are treated the same
+  D = onehot(X.shape[1:3], P, L)
+  D = D.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
   for b in range(len(P)):
     D[b] = distance_transform_edt(1-D[b])
   D = (D > maxdist).reshape(D.shape)
   B = mk_fgmask(X, thresh=0.01)
-  return (B & D)[:,:,:,None]
+  return (B & D)[:,:,:,None].astype(np.float32)
 
 def mk_fgmask(X, thresh=0.01):
   """X: BHWC"""
