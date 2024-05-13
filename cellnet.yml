@@ -27,19 +27,15 @@ dependencies:
 - pytorch
 - pytorch-cuda
 
-
 # TODO: maybe replace these
 - segmentation-models-pytorch  # for UNet
 - scikit-learn  
-
 
 # needed in conda and pip
 - albumentations 
 - onnxruntime
 
-
 - pip:
   - albumentations  # newer version than conda
   - onnxruntime #==1.16  # for fg/bg map
   - onnxruntime-gpu
-
