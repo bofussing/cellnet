@@ -3,6 +3,8 @@
 name: cellnet
 
 channels:
+- pytorch 
+- nvidia
 - conda-forge
 
 dependencies:
@@ -23,6 +25,7 @@ dependencies:
 - colorcet
 
 - pytorch
+- pytorch-cuda
 
 
 # TODO: maybe replace these
