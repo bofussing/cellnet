@@ -29,7 +29,6 @@ device = torch.device('cuda:0' if CUDA else 'cpu')
 DRAFT = not CUDA
 if DRAFT: plot.set_zoom(0.25)
 
-
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
 def cpu(x): return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else x
 
@@ -143,7 +142,7 @@ def debug_collate(S):
     class_labels = [s['class_labels'] for s in S],
   )
 
-def mkLoader(ids, bs, transforms, fraction=1, sparsity=1, shuffle=True):
+def mkLoader(ids, bs, transforms, fraction=1.0, sparsity=1.0, shuffle=True):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity, batch_size=bs), 
     batch_size=bs, shuffle=shuffle, collate_fn= debug_collate,
@@ -154,20 +153,20 @@ def mkLoader(ids, bs, transforms, fraction=1, sparsity=1, shuffle=True):
 def plot_overlay(x,m,z, ax=None):
   ax_was_none = ax==None
   ax = plot.image(x, ax=ax)
-  plot.heatmap(z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
   plot.heatmap(m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
+  plot.heatmap(z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
   if ax_was_none: pass# plt.close('all')
 
 
 def plot_grid(grid, **loader_kwargs):
-  loader = mkLoader([1], 1, **loader_kwargs)
-  for B, ax in zip(loader,
-                   plot.grid(grid, [cfg.cropsize]*2)[1],):
-    B = B['image'], B['masks'][0], batched(keypoints2heatmap)(B)
-    plot_overlay(*[cpu(v[0]) for v in B], ax=ax)
+  loader = mkLoader([1], bs=prod(grid), fraction = 0.3 if DRAFT else 1.0, **loader_kwargs)
+  B = next(iter(loader))
+  B = zip(B['image'], B['masks'][0], batched(keypoints2heatmap)(B))
+  for b,ax in zip(B, plot.grid(grid, [cfg.cropsize]*2)[1]):
+    plot_overlay(*[cpu(v) for v in b], ax=ax)
   pass# plt.close('all')
 
-for B in mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False):
+for B in mkLoader([1,2,4], bs=1, fraction = 0.3 if DRAFT else 1.0, transforms=testaugs, shuffle=False):
   plot_overlay(*[cpu(v[0]) for v in [B['image'], B['masks'][0], batched(keypoints2heatmap)(B)]])
 
 plot_grid((3,3), transforms=valaugs)
@@ -330,6 +329,14 @@ runs = [
 ] if not DRAFT else \
   [([1],[1],0.1,1)]
 
+# Overwrite for test run
+runs = [
+  ([2,4], [1], 1, 1),
+  ([2,4], [1], 0.1, 1),
+  ([2,4], [1], 1, 0.1),
+] if not DRAFT else \
+  [([1],[1],0.1,1)]
+
 for ti, vi, f, s in runs:
   log, model = do(ti, vi, f, s)
   results = pd.concat([results, pd.DataFrame(dict(**log.iloc[-1],
@@ -356,24 +363,23 @@ for ax, (key, text) in zip(axs.flat, key2text.items()):
 def plot_diff(x,m,y,z,k, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
   ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
-  plot.heatmap(m/1.0, ax=ax, alpha=lambda x: 0.3*x, color='#000000')
-  ax.scatter(k[0], k[1], facecolors='none', edgecolors='black', marker='o', alpha=0.5, linewidths=1)
-  pass# plt.close('all')
+  plot.heatmap(m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
+  ax.scatter(*zip(*k), facecolors='none', edgecolors='black', marker='o', alpha=0.5, linewidths=10*100, s=np.pi*cfg.sigma**2*100)
 
 def plot_predictions():
   for mi, m in enumerate(results.m.dropna()):
     m.eval()
-    loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
+    #loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
+    loader = mkLoader([1], 1, transforms=testaugs, shuffle=False)
 
     def do(m, batch):
       B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), batched(keypoints2heatmap)(batch), batch['keypoints']
       
       for x,m,y,z,k in zip(*[cpu(v) for v in B]):
-        print(k)
-        plot_overlay(x,m,z)
+        plot_overlay(x,m,y)
         plot_diff(x,m,y,z,k)
         
-        plot.image(np.zeros((100,10,3)))  # separator
+        #plot.image(np.zeros((100,10,3)))  # separator
 
         ny,nz,a = accuracy(y,z, return_counts=True)
         print('Model', mi, ': ', ny, '/', nz, f"{int(100*abs(a))}%")  # TODO replace with accuracy function if same
@@ -382,5 +388,8 @@ def plot_predictions():
       do(m, batch)
 
 plot_predictions()
+
+# %%
+plt.close('all')
 
 # %%

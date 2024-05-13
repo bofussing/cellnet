@@ -43,7 +43,7 @@ def grid(grid, shape, zoom=None):
   return fig, axs
 
 
-def image(img, ax=None, zoom=None, **imshow_kwargs):
+def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
   global ZOOM
   if zoom is None: zoom = ZOOM
   if img.ndim == 3 and img.shape[0] in (1,3,4): img = np.transpose(img, (1,2,0))
@@ -52,7 +52,7 @@ def image(img, ax=None, zoom=None, **imshow_kwargs):
 
   if ax == None:
     # no whitespace and 1:1 pixel resolution
-    fig = plt.figure(frameon=False, layout='tight', dpi=1)
+    fig = plt.figure(frameon=not exact, layout='tight', dpi=1)
     ax = fig.add_axes((0,0,1,1))
     fig.set_size_inches(img.shape[0]/fig.dpi*zoom, img.shape[1]/fig.dpi*zoom)  
     ax.axis('off')
