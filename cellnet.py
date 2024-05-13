@@ -362,7 +362,7 @@ def plot_diff(x,m,y,z,k, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
   ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
   plot.heatmap(m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  ax.scatter(*zip(*k), facecolors='none', edgecolors='black', marker='o', alpha=0.5, linewidths=10*100, s=np.pi*cfg.sigma**2*100)
+  plot.points(ax, k, cfg.sigma)
 
 def plot_predictions():
   for mi, m in enumerate(results.m.dropna()):

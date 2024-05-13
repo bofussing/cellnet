@@ -30,6 +30,11 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   return image(out, ax=ax)
 
 
+def points(ax, points, radius):
+  """"[(x,y), ...]"""
+  ax.scatter(*zip(*points), facecolors='none', edgecolors='black', marker='o', alpha=0.5, linewidths=10*100, s=np.pi*radius**2*100)
+  
+
 def grid(grid, shape, zoom=None):
   global ZOOM
   if zoom is None: zoom = ZOOM
