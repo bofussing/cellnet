@@ -1,0 +1,14 @@
+  ===  RUNNING  cellnet.py  ===  
+
+0.02s - Debugger warning: It seems that frozen modules are being used, which may
+0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off
+0.00s - to python to disable frozen modules.
+0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.
+[jupytext] Reading cellnet.py in format py
+[jupytext] Setting kernel python3
+[jupytext] Updating notebook metadata with '{"kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3 (ipykernel)"}}'
+[jupytext] Executing notebook with kernel python3
+[jupytext] Writing ./66e245161.ipynb
+
+> Notebook execution time (hhmmss) 000556
+> Saved to ./results/./cellnet/240513-191800-000556.ipynb
