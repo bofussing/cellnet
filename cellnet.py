@@ -23,8 +23,9 @@ import util.plot as plot
 
 CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu')
+print(device)
 
-DRAFT = not CUDA
+DRAFT = False#not CUDA
 if DRAFT: plot.set_zoom(0.25)
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
