@@ -4,6 +4,7 @@
 # %% # Imports 
 from math import prod
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import pandas as pd
 
@@ -31,7 +32,7 @@ def cpu(x): return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else 
 
 key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
             'ta': 'Training Accuracy', 'va': 'Validation Accuracy', 
-            'ti': 'Training ImageIDs', 'vi': 'Validation ImageIDs',
+            'ti': 'Training Image', 'vi': 'Validation Image',
             'f' : 'Fraction of Data',  's' : 'Artificial Sparsity',
             'e' : 'Epoch', 'lr': 'Learning Rate' }
 
@@ -185,7 +186,7 @@ mk_model()
 
 # %% # Train 
 
-# TODO: apply MESA loss from lempitsky2010learning.  Other losses: research follow-up literature. (xie2016microscopy uses L2 loss)
+# TODO: apply MESA loss from @lempitsky2010learning.  Other losses: research follow-up literature. (xie2016microscopy uses L2 loss)
 def lossf(y, z, m, count=False):
   y *= m; z *= m  # mask 
   SE = (y - z)**2 
@@ -324,20 +325,13 @@ runs = [
   ([1,4], [2], 1, 0.01),
   ([1,2], [4], 1, 0.01),
 ] if not DRAFT else \
-  [([1],[1],0.1,1)]
+  [([1],[1],1,1)]
 
-# Overwrite for test run
-runs = [
-  ([2,4], [1], 1, 1),
-  ([2,4], [1], 0.1, 1),
-  ([2,4], [1], 1, 0.1),
-] if not DRAFT else \
-  [([1],[1],0.1,1)]
 
 for ti, vi, f, s in runs:
   log, model = do(ti, vi, f, s)
   results = pd.concat([results, pd.DataFrame(dict(**log.iloc[-1],
-        m = model if f*s==1 or DRAFT else None, ti = ti, vi = vi, f = f, s = s))], 
+        m = [model if f*s==1 else None], ti = [ti], vi = [vi], f = [f], s = [s]))], 
         ignore_index=True)
   
 # save the results as csv. exclude model column
@@ -348,12 +342,21 @@ results.drop(columns=['m']).to_csv('results/cellnet/results.csv', index=False)
 # %% # plot losses
 fig, axs = plt.subplots(2,2, figsize=(15,10))
 
+vi=key2text['vi']
+R = results.rename(columns=dict(vi=vi))
+
 for ax, (key, text) in zip(axs.flat, key2text.items()):
   if key in "ta va tl vl".split(' '):
-    ax.boxplot(results[key].T)
-    ax.set_title(text)
-    ax.set_xlabel("Training set size")
+    ax = sns.scatterplot(ax=ax, data=R, 
+                         x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
 
+    sns.regplot(x='s', y=key, data=R, scatter=False, ax=ax)
+
+    ax.set_title(text)
+    ax.set_xlabel('Data Fraction')
+    ax.set_ylabel('')
+
+    sns.move_legend(ax, "lower left")
 
 # %% # Plot the predictions
 
