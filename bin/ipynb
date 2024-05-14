@@ -25,7 +25,7 @@ WORKING="$SUBDIR/$(sha1sum "$FILE" | cut -c-9).ipynb"
 mkdir -p "$OUTDIR"
 
 
-echo -e "  ===  RUNNING  $FILE  ===  \n"
+echo -e "  ===  RUNNING $FILE at $STARTTIME ===  \n"
 
 #nvidia-smi
 
@@ -51,3 +51,4 @@ RESULT="$RESULT.ipynb"
 mv "$WORKING" "$RESULT"
 
 echo "> Saved to $RESULT"
+echo
