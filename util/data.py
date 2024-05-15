@@ -7,6 +7,7 @@ from scipy.ndimage import gaussian_filter, distance_transform_edt
 
 from sympy import O
 import torch
+import torch.utils.data
 
 from collections import defaultdict 
 from types import SimpleNamespace as obj
@@ -33,9 +34,12 @@ class CellnetDataset(torch.utils.data.Dataset):
 
     # filter out all points outside of X
     for i in range(len(self.X)):
-      self.P[i], self.L[i] = zip(*[((x,y),l) for ((x,y),l) in 
-                             zip(self.P[i],self.L[i]) if 0 <= x < self.X[i].shape[1] 
-                                                     and 0 <= y < self.X[i].shape[0]])
+      P = []; L = []
+      for ((x,y), l) in zip(self.P[i], self.L[i]):
+        if  0 <= x < self.X[i].shape[1]\
+        and 0 <= y < self.X[i].shape[0]:
+          P += [(x,y)]; L += [l]
+      self.P[i] = np.array(P); self.L[i] = np.array(L)
 
     if (s:=sparsity) < 1.0:
       self.P = [p[::int(1/s)] for p in self.P]
@@ -79,7 +83,7 @@ def load_points(path, ids, l2i):
         x = result['value']['x']/100 * result['original_width']
         y = result['value']['y']/100 * result['original_height']
         l = result['value']['keypointlabels'][0]
-        P[i] += [[x,y]]
+        P[i] += [(x,y)]
         L[i] += [l2i(l)]
   return [np.array(ps) for ps in P], [np.array(ls) for ls in L]
 
