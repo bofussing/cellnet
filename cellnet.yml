@@ -36,6 +36,6 @@ dependencies:
 - onnxruntime
 
 - pip:
-  - albumentations  # newer version than conda
+  - albumentations==1.4.7  # newer version than conda
   - onnxruntime #==1.16  # for fg/bg map
   - onnxruntime-gpu

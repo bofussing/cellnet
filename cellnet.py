@@ -125,7 +125,7 @@ def mkAugs(mode):
       ]), 
 
     # TODO D4
-    A.D4()
+    A.D4(),
     A.ToFloat(),
     #XNorm(), 
     ToTensorV2(transpose_mask=True, always_apply=True), 
