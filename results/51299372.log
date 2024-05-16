@@ -1,0 +1,125 @@
+  ===  RUNNING cellnet.py at 240515-184800 ===  
+
+0.05s - Debugger warning: It seems that frozen modules are being used, which may
+0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off
+0.00s - to python to disable frozen modules.
+0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.
+[jupytext] Reading cellnet.py in format py
+[jupytext] Setting kernel python3
+[jupytext] Updating notebook metadata with '{"kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3 (ipykernel)"}}'
+[jupytext] Executing notebook with kernel python3
+Traceback (most recent call last):
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/bin/jupytext", line 10, in <module>
+    sys.exit(jupytext())
+             ^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 497, in jupytext
+    exit_code += jupytext_single_file(nb_file, args, log)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 734, in jupytext_single_file
+    exec_proc.preprocess(notebook, resources=resources)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 103, in preprocess
+    self.preprocess_cell(cell, resources, index)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 124, in preprocess_cell
+    cell = self.execute_cell(cell, index, store_history=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupyter_core/utils/__init__.py", line 165, in wrapped
+    return loop.run_until_complete(inner)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 1062, in async_execute_cell
+    await self._check_raise_for_error(cell, cell_index, exec_reply)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 918, in _check_raise_for_error
+    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
+nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
+------------------
+fig, axs = plt.subplots(2,2, figsize=(15,10))
+
+vi=key2text['vi']
+R = results.rename(columns=dict(vi=vi))
+
+for ax, (key, text) in zip(axs.flat, key2text.items()):
+  if key in "ta va tl vl".split(' '):
+    ax = sns.scatterplot(ax=ax, data=R, 
+                         x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
+
+    sns.regplot(x='s', y=key, data=R, scatter=False, ax=ax)
+
+    ax.set_title(text)
+    ax.set_xlabel('Data Fraction')
+    ax.set_ylabel('')
+
+    sns.move_legend(ax, "lower left")
+------------------
+
+
+[0;31m---------------------------------------------------------------------------[0m
+[0;31mUFuncTypeError[0m                            Traceback (most recent call last)
+Cell [0;32mIn[6], line 11[0m
+[1;32m      7[0m [38;5;28;01mif[39;00m key [38;5;129;01min[39;00m [38;5;124m"[39m[38;5;124mta va tl vl[39m[38;5;124m"[39m[38;5;241m.[39msplit([38;5;124m'[39m[38;5;124m [39m[38;5;124m'[39m):
+[1;32m      8[0m   ax [38;5;241m=[39m sns[38;5;241m.[39mscatterplot(ax[38;5;241m=[39max, data[38;5;241m=[39mR, 
+[1;32m      9[0m                        x[38;5;241m=[39m[38;5;124m'[39m[38;5;124ms[39m[38;5;124m'[39m, y[38;5;241m=[39mkey, hue[38;5;241m=[39mR[vi][38;5;241m.[39mmap([38;5;28;01mlambda[39;00m l: l[[38;5;241m0[39m])) 
+[0;32m---> 11[0m   [43msns[49m[38;5;241;43m.[39;49m[43mregplot[49m[43m([49m[43mx[49m[38;5;241;43m=[39;49m[38;5;124;43m'[39;49m[38;5;124;43ms[39;49m[38;5;124;43m'[39;49m[43m,[49m[43m [49m[43my[49m[38;5;241;43m=[39;49m[43mkey[49m[43m,[49m[43m [49m[43mdata[49m[38;5;241;43m=[39;49m[43mR[49m[43m,[49m[43m [49m[43mscatter[49m[38;5;241;43m=[39;49m[38;5;28;43;01mFalse[39;49;00m[43m,[49m[43m [49m[43max[49m[38;5;241;43m=[39;49m[43max[49m[43m)[49m
+[1;32m     13[0m   ax[38;5;241m.[39mset_title(text)
+[1;32m     14[0m   ax[38;5;241m.[39mset_xlabel([38;5;124m'[39m[38;5;124mData Fraction[39m[38;5;124m'[39m)
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/regression.py:775[0m, in [0;36mregplot[0;34m(data, x, y, x_estimator, x_bins, x_ci, scatter, fit_reg, ci, n_boot, units, seed, order, logistic, lowess, robust, logx, x_partial, y_partial, truncate, dropna, x_jitter, y_jitter, label, color, marker, scatter_kws, line_kws, ax)[0m
+[1;32m    773[0m scatter_kws[[38;5;124m"[39m[38;5;124mmarker[39m[38;5;124m"[39m] [38;5;241m=[39m marker
+[1;32m    774[0m line_kws [38;5;241m=[39m {} [38;5;28;01mif[39;00m line_kws [38;5;129;01mis[39;00m [38;5;28;01mNone[39;00m [38;5;28;01melse[39;00m copy[38;5;241m.[39mcopy(line_kws)
+[0;32m--> 775[0m [43mplotter[49m[38;5;241;43m.[39;49m[43mplot[49m[43m([49m[43max[49m[43m,[49m[43m [49m[43mscatter_kws[49m[43m,[49m[43m [49m[43mline_kws[49m[43m)[49m
+[1;32m    776[0m [38;5;28;01mreturn[39;00m ax
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/regression.py:384[0m, in [0;36m_RegressionPlotter.plot[0;34m(self, ax, scatter_kws, line_kws)[0m
+[1;32m    381[0m     [38;5;28mself[39m[38;5;241m.[39mscatterplot(ax, scatter_kws)
+[1;32m    383[0m [38;5;28;01mif[39;00m [38;5;28mself[39m[38;5;241m.[39mfit_reg:
+[0;32m--> 384[0m     [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mlineplot[49m[43m([49m[43max[49m[43m,[49m[43m [49m[43mline_kws[49m[43m)[49m
+[1;32m    386[0m [38;5;66;03m# Label the axes[39;00m
+[1;32m    387[0m [38;5;28;01mif[39;00m [38;5;28mhasattr[39m([38;5;28mself[39m[38;5;241m.[39mx, [38;5;124m"[39m[38;5;124mname[39m[38;5;124m"[39m):
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/regression.py:429[0m, in [0;36m_RegressionPlotter.lineplot[0;34m(self, ax, kws)[0m
+[1;32m    427[0m [38;5;250m[39m[38;5;124;03m"""Draw the model."""[39;00m
+[1;32m    428[0m [38;5;66;03m# Fit the regression model[39;00m
+[0;32m--> 429[0m grid, yhat, err_bands [38;5;241m=[39m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mfit_regression[49m[43m([49m[43max[49m[43m)[49m
+[1;32m    430[0m edges [38;5;241m=[39m grid[[38;5;241m0[39m], grid[[38;5;241m-[39m[38;5;241m1[39m]
+[1;32m    432[0m [38;5;66;03m# Get set default aesthetics[39;00m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/regression.py:229[0m, in [0;36m_RegressionPlotter.fit_regression[0;34m(self, ax, x_range, grid)[0m
+[1;32m    227[0m     yhat, yhat_boots [38;5;241m=[39m [38;5;28mself[39m[38;5;241m.[39mfit_logx(grid)
+[1;32m    228[0m [38;5;28;01melse[39;00m:
+[0;32m--> 229[0m     yhat, yhat_boots [38;5;241m=[39m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mfit_fast[49m[43m([49m[43mgrid[49m[43m)[49m
+[1;32m    231[0m [38;5;66;03m# Compute the confidence interval at each grid point[39;00m
+[1;32m    232[0m [38;5;28;01mif[39;00m ci [38;5;129;01mis[39;00m [38;5;28;01mNone[39;00m:
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/regression.py:246[0m, in [0;36m_RegressionPlotter.fit_fast[0;34m(self, grid)[0m
+[1;32m    244[0m X, y [38;5;241m=[39m np[38;5;241m.[39mc_[np[38;5;241m.[39mones([38;5;28mlen[39m([38;5;28mself[39m[38;5;241m.[39mx)), [38;5;28mself[39m[38;5;241m.[39mx], [38;5;28mself[39m[38;5;241m.[39my
+[1;32m    245[0m grid [38;5;241m=[39m np[38;5;241m.[39mc_[np[38;5;241m.[39mones([38;5;28mlen[39m(grid)), grid]
+[0;32m--> 246[0m yhat [38;5;241m=[39m grid[38;5;241m.[39mdot([43mreg_func[49m[43m([49m[43mX[49m[43m,[49m[43m [49m[43my[49m[43m)[49m)
+[1;32m    247[0m [38;5;28;01mif[39;00m [38;5;28mself[39m[38;5;241m.[39mci [38;5;129;01mis[39;00m [38;5;28;01mNone[39;00m:
+[1;32m    248[0m     [38;5;28;01mreturn[39;00m yhat, [38;5;28;01mNone[39;00m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/regression.py:242[0m, in [0;36m_RegressionPlotter.fit_fast.<locals>.reg_func[0;34m(_x, _y)[0m
+[1;32m    241[0m [38;5;28;01mdef[39;00m [38;5;21mreg_func[39m(_x, _y):
+[0;32m--> 242[0m     [38;5;28;01mreturn[39;00m [43mnp[49m[38;5;241;43m.[39;49m[43mlinalg[49m[38;5;241;43m.[39;49m[43mpinv[49m[43m([49m[43m_x[49m[43m)[49m[38;5;241m.[39mdot(_y)
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/numpy/linalg/linalg.py:2022[0m, in [0;36mpinv[0;34m(a, rcond, hermitian)[0m
+[1;32m   2020[0m     [38;5;28;01mreturn[39;00m wrap(res)
+[1;32m   2021[0m a [38;5;241m=[39m a[38;5;241m.[39mconjugate()
+[0;32m-> 2022[0m u, s, vt [38;5;241m=[39m [43msvd[49m[43m([49m[43ma[49m[43m,[49m[43m [49m[43mfull_matrices[49m[38;5;241;43m=[39;49m[38;5;28;43;01mFalse[39;49;00m[43m,[49m[43m [49m[43mhermitian[49m[38;5;241;43m=[39;49m[43mhermitian[49m[43m)[49m
+[1;32m   2024[0m [38;5;66;03m# discard small singular values[39;00m
+[1;32m   2025[0m cutoff [38;5;241m=[39m rcond[[38;5;241m.[39m[38;5;241m.[39m[38;5;241m.[39m, newaxis] [38;5;241m*[39m amax(s, axis[38;5;241m=[39m[38;5;241m-[39m[38;5;241m1[39m, keepdims[38;5;241m=[39m[38;5;28;01mTrue[39;00m)
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/numpy/linalg/linalg.py:1681[0m, in [0;36msvd[0;34m(a, full_matrices, compute_uv, hermitian)[0m
+[1;32m   1678[0m         gufunc [38;5;241m=[39m _umath_linalg[38;5;241m.[39msvd_n_s
+[1;32m   1680[0m signature [38;5;241m=[39m [38;5;124m'[39m[38;5;124mD->DdD[39m[38;5;124m'[39m [38;5;28;01mif[39;00m isComplexType(t) [38;5;28;01melse[39;00m [38;5;124m'[39m[38;5;124md->ddd[39m[38;5;124m'[39m
+[0;32m-> 1681[0m u, s, vh [38;5;241m=[39m [43mgufunc[49m[43m([49m[43ma[49m[43m,[49m[43m [49m[43msignature[49m[38;5;241;43m=[39;49m[43msignature[49m[43m,[49m[43m [49m[43mextobj[49m[38;5;241;43m=[39;49m[43mextobj[49m[43m)[49m
+[1;32m   1682[0m u [38;5;241m=[39m u[38;5;241m.[39mastype(result_t, copy[38;5;241m=[39m[38;5;28;01mFalse[39;00m)
+[1;32m   1683[0m s [38;5;241m=[39m s[38;5;241m.[39mastype(_realType(result_t), copy[38;5;241m=[39m[38;5;28;01mFalse[39;00m)
+
+[0;31mUFuncTypeError[0m: Cannot cast ufunc 'svd_n_s' input from dtype('O') to dtype('float64') with casting rule 'same_kind'
+
+
+> Notebook execution time (hhmmss) 004458
+mv: cannot stat ‘./dec423201.ipynb’: No such file or directory
+> Saved to ./results/./cellnet/240515-184800-004458.ipynb
+
