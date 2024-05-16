@@ -2,6 +2,8 @@
 # # CellNet
 
 # %% # Imports 
+from ast import List
+import ast
 from math import prod
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -17,6 +19,8 @@ from albumentations.pytorch import ToTensorV2
 from collections import defaultdict 
 from types import SimpleNamespace as obj
 import itertools as it
+
+from traitlets import Int
 
 import util.data as data
 import util.plot as plot
@@ -121,6 +125,7 @@ def mkAugs(mode):
       ]), 
 
     # TODO D4
+    A.D4()
     A.ToFloat(),
     #XNorm(), 
     ToTensorV2(transpose_mask=True, always_apply=True), 
@@ -262,7 +267,7 @@ def do(ti, vi, f, s):
   valdl   = mkLoader(vi, 1, transforms=valaugs)
 
   model = mk_model()
-  log = train(100 if not DRAFT else 2, model, traindl, valdl, 
+  log = train(1000 if not DRAFT else 2, model, traindl, valdl, 
               info={'f': f'{f:.0%}', 's': f'{s:.0%}'})
   
   return log, model
@@ -270,11 +275,10 @@ def do(ti, vi, f, s):
 
 results = pd.DataFrame(columns=['m', 'f', 's', 'ti', 'vi', 'ta', 'va', 'tl', 'vl'])
 
-
-runs = [
-  ([2,4], [1], 1, 1),
-  ([1,4], [2], 1, 1),
-  ([1,2], [4], 1, 1),
+runs_dataamount = [
+  ([2,4], [1], 0.9, 1),
+  ([1,4], [2], 0.9, 1),
+  ([1,2], [4], 0.9, 1),
 
   ([2,4], [1], 0.75, 1),
   ([1,4], [2], 0.75, 1),
@@ -291,17 +295,14 @@ runs = [
   ([2,4], [1], 0.1, 1),
   ([1,4], [2], 0.1, 1),
   ([1,2], [4], 0.1, 1),
-  
-  ([2,4], [1], 0.05, 1),
-  ([1,4], [2], 0.05, 1),  
-  ([1,2], [4], 0.05, 1),
-  
-  ([2,4], [1], 0.01, 1),
-  ([1,4], [2], 0.01, 1),
-  ([1,2], [4], 0.01, 1),
+]
 
-
+runs_sparsity = [
   # Credit Kaupo: extrapolate sparsity's effect
+  ([2,4], [1], 1, 0.9),
+  ([1,4], [2], 1, 0.9),
+  ([1,2], [4], 1, 0.9),
+
   ([2,4], [1], 1, 0.75),
   ([1,4], [2], 1, 0.75),
   ([1,2], [4], 1, 0.75),
@@ -317,47 +318,45 @@ runs = [
   ([2,4], [1], 1, 0.1),
   ([1,4], [2], 1, 0.1),
   ([1,2], [4], 1, 0.1),
+] 
 
-  ([2,4], [1], 1, 0.05),
-  ([1,4], [2], 1, 0.05),
-  ([1,2], [4], 1, 0.05),
-
-  ([2,4], [1], 1, 0.01),
-  ([1,4], [2], 1, 0.01),
-  ([1,2], [4], 1, 0.01),
-] if not DRAFT else \
-  [([1],[1],1,1)]
+runs_main = [([2,4], [1], 1, 1), ([1,4], [2], 1, 1), ([1,2], [4], 1, 1)]
 
 
-for ti, vi, f, s in runs:
-  log, model = do(ti, vi, f, s)
-  results = pd.concat([results, pd.DataFrame(dict(**log.iloc[-1],
-        m = [model if f*s==1 else None], ti = [ti], vi = [vi], f = [f], s = [s]))], 
-        ignore_index=True)
+RUNS = [runs_main]
+
+for runs in RUNS:
+  for ti, vi, f, s in runs:
+    log, model = do(ti, vi, f, s)
+    results = pd.concat([results, pd.DataFrame(dict(**log.iloc[-1],
+          m = [model if f*s==1 else None], ti = [ti], vi = [vi], f = [f], s = [s]))], 
+          ignore_index=True)
   
-# save the results as csv. exclude model column
+# %% # save the results as csv. exclude model column
 import os; os.makedirs('results/cellnet', exist_ok=True)
-results.drop(columns=['m']).to_csv('results/cellnet/results.csv', index=False)
+results.drop(columns=['m']).to_csv('results/cellnet/results.csv', index=False, sep=';')
 
 
 # %% # plot losses
-fig, axs = plt.subplots(2,2, figsize=(15,10))
 
 vi=key2text['vi']
-R = results.rename(columns=dict(vi=vi))
+R = pd.read_csv('results/cellnet/results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=vi))
 
-for ax, (key, text) in zip(axs.flat, key2text.items()):
-  if key in "ta va tl vl".split(' '):
-    ax = sns.scatterplot(ax=ax, data=R, 
-                         x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
+def regplot(dim):
+  fig, axs = plt.subplots(2,2, figsize=(15,10))
+  for ax, (key, text) in zip(axs.flat, key2text.items()):
+    if key in "ta va tl vl".split(' '):
+      ax = sns.scatterplot(ax=ax, data=R, 
+                          x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
+      sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax)  # some error with dtypes
+      ax.set_title(f'{text} vs {key2text[dim]}')
+      ax.set_xlabel(key2text[dim])
+      ax.set_ylabel(key2text[key])
+      
+      sns.move_legend(ax, "lower left")
 
-    sns.regplot(x='s', y=key, data=R, scatter=False, ax=ax)
-
-    ax.set_title(text)
-    ax.set_xlabel('Data Fraction')
-    ax.set_ylabel('')
-
-    sns.move_legend(ax, "lower left")
+if runs_dataamount in RUNS: regplot('f')
+if runs_sparsity   in RUNS: regplot('s')
 
 # %% # Plot the predictions
 
