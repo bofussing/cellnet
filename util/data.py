@@ -109,7 +109,7 @@ def mask_sparse(X, P, L, maxdist):
     D[b] = distance_transform_edt(1-D[b])
   D = (D > maxdist).reshape(D.shape)
   B = mk_fgmask(X, thresh=0.01)
-  return (B & D)[:,:,:,None].astype(np.float32)
+  return 1-(B & D)[:,:,:,None].astype(np.float32)
 
 def mk_fgmask(X, thresh=0.01):
   """X: BHWC"""
