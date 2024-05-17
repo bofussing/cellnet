@@ -29,7 +29,7 @@ CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu')
 print(device)
 
-DRAFT = not CUDA
+DRAFT = False#not CUDA
 if DRAFT: plot.set_zoom(0.25)
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
@@ -116,8 +116,8 @@ def mkAugs(mode):
         # color
         A.Equalize(),
         A.ColorJitter(), 
-        A.ChannelDropout(),  # too much color?
-        A.ChannelShuffle(),  
+        #A.ChannelDropout(),  # too much color?
+        #A.ChannelShuffle(),  
         # A.ChromaticAberration(), # NEEDS python 3.11 - but cannot because of onnxruntime needing old modle
 
         # noise
@@ -194,13 +194,13 @@ mk_model()
 
 # TODO: apply MESA loss from @lempitsky2010learning.  Other losses: research follow-up literature. (xie2016microscopy uses L2 loss)
 def lossf(y, z, m, count=False):
-  y *= m; z *= m  # mask 
+  #y *= m; z *= m  # mask 
   SE = (y - z)**2 
   MSE = SE.mean()
 
   C = (y.sum() - z.sum()) / z.sum()   # TODO opt-in count loss, later in training? normalize with respect to MSE? because rn it seems to disturb training?
   
-  return MSE + (C if count else 0)
+  return MSE# + (C if count else 0)
 
 def accuracy(y,z, return_counts=False):
   ny = yunnorm(y).sum().item()
@@ -209,9 +209,10 @@ def accuracy(y,z, return_counts=False):
   if return_counts: return ny, nz, a
   else: return a
 
-def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
-  lr0 = 5e-3
-  optim = torch.optim.Adam(model.parameters(), lr=lr0)
+def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
+  lr0 = 1e-3
+  optim = torch.optim.SGD(model.parameters(), lr=lr0)
+  #optim = torch.optim.Adam(model.parameters(), lr=lr0)
   sched = torch.optim.lr_scheduler.StepLR(optim, step_size=80, gamma=0.1)
 
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
@@ -256,7 +257,7 @@ def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
         lg['vl'] = l/(b+1)
         lg['va'] = a/(b+1)
 
-    if plot_live: plot.train_graph(e, log, info=info, key2text=key2text, clear=True)
+    if True or plot_live: plot.train_graph(e, log.drop(columns=['va', 'ta', 'vl']), info=info, key2text=key2text, clear=True)
   plot.train_graph(epochs, log, info=info, key2text=key2text)  # TODO combine all train graphs into one 
   
   return log
@@ -264,10 +265,10 @@ def train(epochs, model, traindl, valdl=None, plot_live = False, info={}):
 
 def do(ti, vi, f, s):
   traindl = mkLoader(ti, 8, transforms=trainaugs, fraction=f, sparsity=s)
-  valdl   = mkLoader(vi, 1, transforms=valaugs)
+  valdl   = mkLoader(vi, 8, transforms=valaugs)
 
   model = mk_model()
-  log = train(1000 if not DRAFT else 2, model, traindl, valdl, 
+  log = train(5 if not DRAFT else 2, model, traindl, valdl, 
               info={'f': f'{f:.0%}', 's': f'{s:.0%}'})
   
   return log, model
@@ -322,25 +323,25 @@ runs_sparsity = [
 
 runs_main = [([2,4], [1], 1, 1), ([1,4], [2], 0.999, 1), ([1,2], [4], 0.999, 1)]
 
+runs_draft = [([1], [1], 1, 1)]
 
-RUNS = [runs_main]
+RUNS = [runs_draft]
 
 for runs in RUNS:
   for ti, vi, f, s in runs:
     log, model = do(ti, vi, f, s)
-    results = pd.concat([results, pd.DataFrame(dict(**log.iloc[-1],
-          m = [model if f*s==1 else None], ti = [ti], vi = [vi], f = [f], s = [s]))], 
-          ignore_index=True)
+    _row =  pd.DataFrame(dict(**log.iloc[-1], m = [model if f*s==1 else None], 
+                              ti = [ti], vi = [vi], f = [f], s = [s]))
+    results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
   
 # %% # save the results as csv. exclude model column
-import os; os.makedirs('results/cellnet', exist_ok=True)
-results.drop(columns=['m']).to_csv('results/cellnet/results.csv', index=False, sep=';')
+results.drop(columns=['m']).to_csv('results.csv', index=False, sep=';')
 
 
 # %% # plot losses
 
 vi=key2text['vi']
-R = pd.read_csv('results/cellnet/results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=vi))
+R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=vi))
 
 def regplot(dim):
   fig, axs = plt.subplots(2,2, figsize=(15,10))
@@ -363,7 +364,7 @@ if runs_sparsity   in RUNS: regplot('s')
 def plot_diff(x,m,y,z,k, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
   ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
-  plot.heatmap(m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
+  plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
   plot.points(ax, k, cfg.sigma)
 
 def plot_predictions():
