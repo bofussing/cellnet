@@ -29,7 +29,7 @@ CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu')
 print(device)
 
-DRAFT = False#not CUDA
+DRAFT = not CUDA
 if DRAFT: plot.set_zoom(0.25)
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
@@ -138,18 +138,18 @@ trainaugs = mkAugs('train')
 valaugs = mkAugs('val')
 testaugs = mkAugs('test')
 
-def debug_collate(S):
-  return dict(
-    image = torch.stack([s['image'] for s in S]),
-    masks = [torch.stack([s['masks'][i] for s in S]) for i in range(len(S[0]['masks']))],
-    keypoints = [s['keypoints'] for s in S],
-    class_labels = [s['class_labels'] for s in S],
-  )
-
 def mkLoader(ids, bs, transforms, fraction=1.0, sparsity=1.0, shuffle=True):
+  def collate(S):
+    return dict(
+      image = torch.stack([s['image'] for s in S]),
+      masks = [torch.stack([s['masks'][i] for s in S]) for i in range(len(S[0]['masks']))],
+      keypoints = [s['keypoints'] for s in S],
+      class_labels = [s['class_labels'] for s in S],
+    )
+
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity, batch_size=bs), 
-    batch_size=bs, shuffle=shuffle, collate_fn= debug_collate,
+    batch_size=bs, shuffle=shuffle, collate_fn= collate,
     persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
 
 # %% # Plot data 
@@ -157,8 +157,8 @@ def mkLoader(ids, bs, transforms, fraction=1.0, sparsity=1.0, shuffle=True):
 def plot_overlay(x,m,z, ax=None):
   ax_was_none = ax==None
   ax = plot.image(x, ax=ax)
-  plot.heatmap(m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
-  plot.heatmap(z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
+  plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
+  plot.heatmap(  z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
   if ax_was_none: pass# plt.close('all')
 
 
@@ -320,7 +320,7 @@ runs_sparsity = [
   ([1,2], [4], 1, 0.1),
 ] 
 
-runs_main = [([2,4], [1], 1, 1), ([1,4], [2], 1, 1), ([1,2], [4], 1, 1)]
+runs_main = [([2,4], [1], 1, 1), ([1,4], [2], 0.999, 1), ([1,2], [4], 0.999, 1)]
 
 
 RUNS = [runs_main]
