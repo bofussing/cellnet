@@ -2,7 +2,6 @@
 # # CellNet
 
 # %% # Imports 
-from ast import List
 import ast
 from math import prod
 import matplotlib.pyplot as plt
@@ -16,11 +15,7 @@ from torch.utils.data import DataLoader
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
-from collections import defaultdict 
 from types import SimpleNamespace as obj
-import itertools as it
-
-from traitlets import Int
 
 import util.data as data
 import util.plot as plot
@@ -29,8 +24,8 @@ CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu')
 print(device)
 
-DRAFT = False#not CUDA
-if DRAFT: plot.set_zoom(0.25)
+DRAFT = False
+if DRAFT: plot.set_zoom(0.5)
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
 def cpu(x): return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else x
@@ -41,14 +36,14 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
             'f' : 'Fraction of Data',  's' : 'Artificial Sparsity',
             'e' : 'Epoch', 'lr': 'Learning Rate' }
 
-# %% # Load Data
 cfg = obj(
-  sigma = 5,
+  sigma = 3.5, # 5 bad?
   maxdist = 26,
   cropsize = 256,
   label2int = lambda l:{'Live Cell':1, 'Dead cell/debris':2}[l], 
 )
 
+# %% # Load Data
 def batched(f):
   def inner(B):
     n_masks = len(B['masks'])
@@ -63,8 +58,9 @@ def mkDataset(ids, **dataset_kwargs): return data.CellnetDataset(ids, **dataset_
 
 def mkNorms(norm_using_images = [1,2,4]):
   ds = mkDataset(norm_using_images)
-  XNorm = lambda **kw: A.Normalize(mean=ds.X.mean(axis=(0,1,2))/255, 
-                                    std=ds.X.std (axis=(0,1,2))/255, **kw)
+
+  XNorm = lambda **kw: A.Normalize(mean=list(ds.X.mean(axis=(0,1,2))/255), 
+                                    std=list(ds.X.std (axis=(0,1,2))/255), **kw)
 
   Y = np.stack([data.Keypoints2Heatmap(cfg.sigma, 0, 1, labels_to_include=[1])(x.transpose(2,0,1),[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
   ymean, ystd = Y.mean(axis=(0,2,3)), Y.std(axis=(0,2,3))
@@ -75,15 +71,12 @@ def mkNorms(norm_using_images = [1,2,4]):
   yunnorm = lambda y: y*ystd.item() + ymean.item()
   return XNorm, keypoints2heatmap, yunnorm
 
-XNorm, keypoints2heatmap, yunnorm = mkNorms()
-
 def mkAugs(mode):
   kpp = A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True)
 
   test = A.Compose(transforms=[
     A.PadIfNeeded(cfg.cropsize*2, cfg.cropsize*2, border_mode=0, value=0),
-    A.ToFloat(),
-    #XNorm(),  #NOTE TODO fix (also below)
+    XNorm(),  #NOTE TODO fix (also below)
     ToTensorV2(transpose_mask=True, always_apply=True)], 
     keypoint_params=kpp)
 
@@ -97,8 +90,8 @@ def mkAugs(mode):
                           height=cfg.cropsize, width=cfg.cropsize),
 
         # spatial with keypoints
-        A.CoarseDropout(max_height=cfg.cropsize//3, max_width=cfg.cropsize//3,
-                        min_height=cfg.cropsize//20,min_width=cfg.cropsize//20),  # evolution of CutOut and RandomErasing
+        A.CoarseDropout(max_height=cfg.cropsize//2, max_width=cfg.cropsize//2,
+                        min_height=cfg.cropsize//8, min_width=cfg.cropsize//8),  # evolution of CutOut and RandomErasing
         #A.Perspective(),  
         A.Rotate(),
         #A.RandomGridShuffle(), 
@@ -126,17 +119,11 @@ def mkAugs(mode):
 
     # TODO D4
     A.D4(),
-    A.ToFloat(),
-    #XNorm(), 
+    XNorm(), 
     ToTensorV2(transpose_mask=True, always_apply=True), 
     ], keypoint_params=kpp)
 
   return test if mode=='test' else aug
-  
-
-trainaugs = mkAugs('train')
-valaugs = mkAugs('val')
-testaugs = mkAugs('test')
 
 def mkLoader(ids, bs, transforms, fraction=1.0, sparsity=1.0, shuffle=True):
   def collate(S):
@@ -150,7 +137,14 @@ def mkLoader(ids, bs, transforms, fraction=1.0, sparsity=1.0, shuffle=True):
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return DataLoader(mkDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity, batch_size=bs), 
     batch_size=bs, shuffle=shuffle, collate_fn= collate,
-    persistent_workers=True, pin_memory=True, num_workers = max(1, (cpu_count()//6) // max(1,gpu_count())))
+    persistent_workers=True, pin_memory=True, num_workers = 8 if CUDA else 2)
+
+
+XNorm, keypoints2heatmap, yunnorm = mkNorms()
+
+trainaugs = mkAugs('train')
+valaugs = mkAugs('val')
+testaugs = mkAugs('test')
 
 # %% # Plot data 
 
@@ -171,7 +165,7 @@ def plot_grid(grid, **loader_kwargs):
   pass# plt.close('all')
 
 for B in mkLoader([1,2,4], bs=1, fraction = 0.3 if DRAFT else 1.0, transforms=testaugs, shuffle=False):
-  plot_overlay(*[cpu(v[0]) for v in [B['image'], B['masks'][0], batched(keypoints2heatmap)(B)]])
+ plot_overlay(*[cpu(v[0]) for v in [B['image'], B['masks'][0], batched(keypoints2heatmap)(B)]])
 
 plot_grid((3,3), transforms=valaugs)
 plot_grid((3,3), transforms=trainaugs)
@@ -181,11 +175,11 @@ plot_grid((3,3), transforms=trainaugs)
 import segmentation_models_pytorch as smp
 
 mk_model = lambda: smp.Unet(  # NOTE TODO: check if spefically used model automatically mirror pads in training or inference
-    encoder_name="resnet34" if not DRAFT else "resnet18",  # 18 34 101
+    encoder_name="resnet152",  # 18 34 50 101 152
     encoder_weights=None,
     in_channels=3,
     classes=1,
-    activation=None,
+    activation='sigmoid',
   ).to(device)  
 mk_model()
 
@@ -194,7 +188,7 @@ mk_model()
 
 # TODO: apply MESA loss from @lempitsky2010learning.  Other losses: research follow-up literature. (xie2016microscopy uses L2 loss)
 def lossf(y, z, m, count=False):
-  #y *= m; z *= m  # mask 
+  y *= m; z *= m  # mask 
   SE = (y - z)**2 
   MSE = SE.mean()
 
@@ -203,17 +197,17 @@ def lossf(y, z, m, count=False):
   return MSE# + (C if count else 0)
 
 def accuracy(y,z, return_counts=False):
-  ny = yunnorm(y).sum().item()
-  nz = yunnorm(z).sum().item()
+  ny = (y).sum().item()
+  nz = (z).sum().item()
   a = 1 - abs(ny - nz) / nz
   if return_counts: return ny, nz, a
   else: return a
 
 def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
-  lr0 = 1e-3
-  optim = torch.optim.SGD(model.parameters(), lr=lr0)
-  #optim = torch.optim.Adam(model.parameters(), lr=lr0)
-  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=80, gamma=0.1)
+  lr0 = 2e-3
+  optim = torch.optim.Adam(model.parameters(), lr=lr0)
+  lossf = torch.nn.MSELoss()  # REVERT?
+  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=80, gamma=0.5)
 
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
   for e in range(epochs):
@@ -223,11 +217,12 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
     for b, B in enumerate(traindl):
       # NOTE: despite batchsize > 3, we can only sample <=3 images, as long as the dataset is not circular (todo: make it circular)
       x,m = B['image'].to(device), B['masks'][0].to(device)
-      z = batched(keypoints2heatmap)(B).to(device).unsqueeze(0)
+      z = batched(keypoints2heatmap)(B).to(device)
 
       y = model(x)
-      loss = lossf(y,z,m)
+      loss = lossf(y*m,z*m) 
       loss.backward()
+      
       optim.step()
       optim.zero_grad()
 
@@ -247,28 +242,28 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
         l = 0; a = 0
         for b, B in enumerate(valdl):
           x,m = B['image'].to(device), B['masks'][0].to(device)
-          z = batched(keypoints2heatmap)(B).to(device).unsqueeze(0)
+          z = batched(keypoints2heatmap)(B).to(device)
 
           y = model(x)
 
-          l += lossf(y,z,m).item()
+          l += lossf(y*m, z*m).item()  
           a += accuracy(y,z) # type: ignore
         
         lg['vl'] = l/(b+1)
         lg['va'] = a/(b+1)
 
-    if True or plot_live: plot.train_graph(e, log.drop(columns=['va', 'ta', 'vl']), info=info, key2text=key2text, clear=True)
-  plot.train_graph(epochs, log, info=info, key2text=key2text)  # TODO combine all train graphs into one 
+    if plot_live: plot.train_graph(e, log, info=info, key2text=key2text, clear=True)
+  plot.train_graph(epochs, log, info=info, key2text=key2text) 
   
   return log
 
 
 def do(ti, vi, f, s):
-  traindl = mkLoader(ti, 8, transforms=trainaugs, fraction=f, sparsity=s)
-  valdl   = mkLoader(vi, 8, transforms=valaugs)
+  traindl = mkLoader(ti, 1, transforms=testaugs, fraction=f, sparsity=s)  # REVERT: bs=64, transforms=trainaugs
+  valdl   = mkLoader(vi, 1, transforms=testaugs)  # REVERT: bs=64, transforms=valaugs
 
   model = mk_model()
-  log = train(5 if not DRAFT else 2, model, traindl, valdl, 
+  log = train(501 if not DRAFT else 2, model, traindl, valdl, 
               info={'f': f'{f:.0%}', 's': f'{s:.0%}'})
   
   return log, model
@@ -297,7 +292,6 @@ runs_dataamount = [
   ([1,4], [2], 0.1, 1),
   ([1,2], [4], 0.1, 1),
 ]
-
 runs_sparsity = [
   # Credit Kaupo: extrapolate sparsity's effect
   ([2,4], [1], 1, 0.9),
@@ -321,7 +315,7 @@ runs_sparsity = [
   ([1,2], [4], 1, 0.1),
 ] 
 
-runs_main = [([2,4], [1], 1, 1), ([1,4], [2], 0.999, 1), ([1,2], [4], 0.999, 1)]
+runs_main = [([2,4], [1], 1, 1), ([1,4], [2], 1, 1), ([1,2], [4], 1, 1)]
 
 runs_draft = [([1], [1], 1, 1)]
 
@@ -333,44 +327,30 @@ for runs in RUNS:
     _row =  pd.DataFrame(dict(**log.iloc[-1], m = [model if f*s==1 else None], 
                               ti = [ti], vi = [vi], f = [f], s = [s]))
     results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
-  
-# %% # save the results as csv. exclude model column
+
+# %% # save the results as csv. exclude model column; plot accuracies
 results.drop(columns=['m']).to_csv('results.csv', index=False, sep=';')
-
-
-# %% # plot losses
-
-vi=key2text['vi']
-R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=vi))
-
-def regplot(dim):
-  fig, axs = plt.subplots(2,2, figsize=(15,10))
-  for ax, (key, text) in zip(axs.flat, key2text.items()):
-    if key in "ta va tl vl".split(' '):
-      ax = sns.scatterplot(ax=ax, data=R, 
-                          x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
-      sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax)  # some error with dtypes
-      ax.set_title(f'{text} vs {key2text[dim]}')
-      ax.set_xlabel(key2text[dim])
-      ax.set_ylabel(key2text[key])
-      
-      sns.move_legend(ax, "lower left")
-
-if runs_dataamount in RUNS: regplot('f')
-if runs_sparsity   in RUNS: regplot('s')
+R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
+if runs_dataamount in RUNS: plot.regplot('f', R, key2text)
+if runs_sparsity   in RUNS: plot.regplot('s', R, key2text)
 
 # %% # Plot the predictions
-
+d = 0
 def plot_diff(x,m,y,z,k, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
-  ax = plot.image(yunnorm(y)-yunnorm(z), ax=ax, cmap='coolwarm')
+  global d
+  D = y-z
+  d = D.copy()
+  D[0,1,0] = -1
+  D[0,1,1] = 1 
+  ax = plot.image(D, ax=ax, cmap='coolwarm')
   plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
   plot.points(ax, k, cfg.sigma)
 
 def plot_predictions():
   for mi, m in enumerate(results.m.dropna()):
     m.eval()
-    loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)
+    loader = mkLoader([1,2,4], 1, transforms=testaugs, shuffle=False)  # REVERT: [1] -> [1,2,4]
 
     def do(m, batch):
       B = batch['image'], batch['masks'][0], m(batch['image'].to(device)), batched(keypoints2heatmap)(batch), batch['keypoints']
@@ -378,8 +358,6 @@ def plot_predictions():
       for x,m,y,z,k in zip(*[cpu(v) for v in B]):
         plot_overlay(x,m,y)
         plot_diff(x,m,y,z,k)
-        
-        #plot.image(np.zeros((100,10,3)))  # separator
 
         ny,nz,a = accuracy(y,z, return_counts=True)
         print('Model', mi, ': ', ny, '/', nz, f"{int(100*abs(a))}%")  # TODO replace with accuracy function if same
