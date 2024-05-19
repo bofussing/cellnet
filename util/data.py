@@ -66,6 +66,9 @@ def Keypoints2Heatmap(sigma, ymean, ystd, labels_to_include=[1]):
     for c in range(Y.shape[-1]):
       Y[...,c] = gaussian_filter(Y[...,c], sigma=sigma, mode='constant', cval=0)
     Y = ((Y - ymean) / ystd).astype(np.float32)
+    # norm to 0-1
+    Y -= Y.min()
+    Y /= Y.max()
     return torch.from_numpy(Y).permute(2,0,1)  # HWC -> CHW
   return f
 

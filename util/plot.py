@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from IPython.display import clear_output
 import numpy as np
 import itertools as it
+import seaborn as sns
 
 # this code assumes HWC
 
@@ -70,7 +71,7 @@ def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
 def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unknown):
   if clear: clear_output(wait=True)
 
-  _, ax = plt.subplots(figsize=(15,10))
+  _, ax = plt.subplots(figsize=(10,7))
   ax.set_title(f"Training\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
   
   for key in (log if keys is None else keys):
@@ -79,6 +80,22 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unk
   ax.set_yscale('log')
   ax.legend(loc='upper right')
   plt.show()
+
+
+def regplot(dim, R, key2text):
+  vi=key2text['vi']
+  
+  fig, axs = plt.subplots(2,2, figsize=(15,10))
+  for ax, (key, text) in zip(axs.flat, key2text.items()):
+    if key in "ta va tl vl".split(' '):
+      ax = sns.scatterplot(ax=ax, data=R, 
+                          x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
+      sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax)  # some error with dtypes
+      ax.set_title(f'{text} vs {key2text[dim]}')
+      ax.set_xlabel(key2text[dim])
+      ax.set_ylabel(key2text[key])
+      
+      sns.move_legend(ax, "lower left")
 
 
 '''  # Kurven-Schaaren für die ganzen Models und Subsets... Draft 
