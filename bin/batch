@@ -1,10 +1,5 @@
 #!/bin/bash
 
-
-ssh -t eckhardt@rocket.hpc.ut.ee "cd sanger && git pull --rebase && sbatch bin/ipynb $@"
+ssh -t eckhardt@rocket.hpc.ut.ee "cd sanger && sbatch bin/ipynb $@"
 
 ssh -t eckhardt@rocket.hpc.ut.ee "watch -n 1 squeue -u eckhardt"
-
-ssh -t eckhardt@rocket.hpc.ut.ee "git add . && git commit -m 'push HPC' && git push"
-
-git pull --rebase

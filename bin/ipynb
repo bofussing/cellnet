@@ -8,61 +8,54 @@
 #SBATCH --gres=gpu:tesla:1
 #SBATCH --mail-user=benjamin.eckhardt@ut.ee
 #SBATCH -A revvity
-#SBATCH -o ------------%j.SLURM
+#SBATCH -o _____________j.RUNNING
 
 
 STARTTIME="$(date +%y%m%d-%H%M%S)"
-FILE="$1"
+INPUT="$1"
 
-NAME="$(basename "$FILE" .py)"
-SUBDIR="$(dirname "$FILE")"   # NOTE this is designed to run in the repo root
-if [ "$SUBDIR" = "" ]; then SUBDIR="."; fi
-ENV="$(basename "$SUBDIR")"
-if [ "$SUBDIR" = "." ]; then ENV="$NAME"; fi
-OUTDIR="./results/$SUBDIR/$NAME/$STARTTIME"
-WORKING="$SUBDIR/$STARTTIME.ipynb"
-TIMESTAMPFILE="$SUBDIR/$STARTTIME-TIMESTAMP"
+NAME="$(basename "$INPUT" .py)"
+INDIR="$(dirname "$INPUT")"   # NOTE this is designed to run in the repo root
+if [ "$INDIR" =  "" ]; then INDIR="."; fi
+if [ "$INDIR" = "." ]; then ENV="$NAME"; else ENV="$(basename "$INDIR")"; fi
+OUTDIR="./results/$INDIR/$NAME/$STARTTIME-RUNNING"
 
-mkdir -p "$OUTDIR"
-
-echo -e "  ===  RUNNING $FILE at $STARTTIME ===  \n"
-touch "$TIMESTAMPFILE"
+echo -e "  ===  RUNNING $INPUT at $STARTTIME ===  \n"
 
 #nvidia-smi
 
-conda=micromamba
 
+conda=micromamba
 $conda shell init --shell=bash                     >/dev/null
 eval "$($conda shell hook --shell=bash)"           >/dev/null 
 $conda activate "$ENV" || $conda activate cellnet  >/dev/null
 
 
+mkdir -p "$OUTDIR"
+
+rsync -a "." "$OUTDIR" --exclude .git --exclude results --filter=':- .gitignore'
+
+INPUT="$OUTDIR/$NAME.py"
+OUTPUT="$OUTDIR/$NAME.ipynb"
+mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT"
+
+TIMESTAMPFILE="$OUTDIR/$STARTTIME-TIMESTAMP"
+touch "$TIMESTAMPFILE"
 SECONDS=0
-jupytext --to notebook --execute -o "$WORKING" "$FILE"
+
+
+jupytext --to notebook --execute -o "$OUTPUT" "$INPUT"
+
 
 duration="$SECONDS"
 RUNTIME="$(date -ud "@$duration" +%H%M%S)"
 echo -e "\n> Notebook execution time (hhmmss) $RUNTIME"
 
-RESULT="$OUTDIR/$RUNTIME"
-if [ $# = 2 ]; then
-  RESULT="$RESULT-$2"; fi
-RESULT="$RESULT.ipynb"
-
-
-find "$SUBDIR" -newer "$TIMESTAMPFILE" -not -path '.gitignore' | while IFS= read -r out; do
-  if [ -d "$out" ]; then
-    mkdir -p "$OUTDIR/${out#"$SUBDIR"}"
-  else
-    mv "$out" "$OUTDIR/${out#"$SUBDIR"}"
-  fi
-done
-
-(mv "$OUTDIR/$STARTTIME.ipynb" "$OUTDIR/$RUNTIME.ipynb" && echo -e "\e[1;32m> Saved to $RESULT\e[0m") \
- || echo -e "\e[1;5;31m> Failed to save $RESULT\e[0m"
-
-find "$SUBDIR" -depth -newer "$TIMESTAMPFILE" -not -path '.gitignore' -type d -empty -delete
-
-
+find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" -not -path '.gitignore' -delete
+find "$OUTDIR" -depth ! -newer "$TIMESTAMPFILE" -not -path '.gitignore' -type d -empty -delete
 rm "$TIMESTAMPFILE"
+
+mv "_____________$SLURM_JOBID.RUNNING" "$OUTDIR/$SLURM_JOBID.log"
+
+mv "$OUTDIR" "${OUTDIR%"-RUNNING"}-$RUNTIME"
 
