@@ -90,8 +90,8 @@ def mkAugs(mode):
                           height=cfg.cropsize, width=cfg.cropsize),
 
         # spatial with keypoints
-        A.CoarseDropout(max_height=cfg.cropsize//2, max_width=cfg.cropsize//2,
-                        min_height=cfg.cropsize//8, min_width=cfg.cropsize//8),  # evolution of CutOut and RandomErasing
+        #A.CoarseDropout(max_height=cfg.cropsize//2, max_width=cfg.cropsize//2,
+        #                min_height=cfg.cropsize//8, min_width=cfg.cropsize//8),  # evolution of CutOut and RandomErasing
         #A.Perspective(),  
         A.Rotate(),
         #A.RandomGridShuffle(), 
