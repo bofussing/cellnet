@@ -1,5 +1,22 @@
 #!/bin/bash
+# NOTE this is designed to run in the repo root
+# it saves the current state of the repo and submits the job
 
-ssh -t eckhardt@rocket.hpc.ut.ee "cd sanger && sbatch bin/ipynb $@"
+STARTTIME="$(date +%y%m%d-%H%M%S)"
+INPUT="$1"
 
-ssh -t eckhardt@rocket.hpc.ut.ee "watch -n 1 squeue -u eckhardt"
+NAME="$(basename "$INPUT" .py)"
+INDIR="$(dirname "$INPUT")"; if [ "$INDIR" =  "" ]; then INDIR="."; fi
+OUTDIR="./results/$INDIR/$NAME/$STARTTIME-RUNNING"
+
+echo -e "  ===  PREPARING BATCHJOB $INPUT at $STARTTIME ===  \n"
+
+mkdir -p "$OUTDIR"
+# if cOMMENT is not empty, save it to the COMMENT file
+
+rsync -a "." "$OUTDIR" --exclude .git --exclude results --filter=':- .gitignore'
+
+INPUT="$OUTDIR/$NAME.py"
+mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT" >/dev/null
+
+sbatch bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR"

@@ -82,7 +82,7 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unk
   plt.show()
 
 
-def regplot(dim, R, key2text):
+def regplot(R, dim, key2text):
   vi=key2text['vi']
   
   fig, axs = plt.subplots(2,2, figsize=(15,10))
@@ -90,7 +90,7 @@ def regplot(dim, R, key2text):
     if key in "ta va tl vl".split(' '):
       ax = sns.scatterplot(ax=ax, data=R, 
                           x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
-      sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax)  # some error with dtypes
+      sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax) 
       ax.set_title(f'{text} vs {key2text[dim]}')
       ax.set_xlabel(key2text[dim])
       ax.set_ylabel(key2text[key])

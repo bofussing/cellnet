@@ -6,24 +6,21 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:tesla:1
-#SBATCH --mail-user=benjamin.eckhardt@ut.ee
+#SBATCH --mail-user=eckhardt
 #SBATCH -A revvity
-#SBATCH -o _____________j.RUNNING
+#SBATCH -o _____________%j-RUNNING
 
 
-STARTTIME="$(date +%y%m%d-%H%M%S)"
-INPUT="$1"
+NAME="$1"; INDIR="$2"; INPUT="$3"; OUTDIR="$4"
 
-NAME="$(basename "$INPUT" .py)"
-INDIR="$(dirname "$INPUT")"   # NOTE this is designed to run in the repo root
 if [ "$INDIR" =  "" ]; then INDIR="."; fi
-if [ "$INDIR" = "." ]; then ENV="$NAME"; else ENV="$(basename "$INDIR")"; fi
-OUTDIR="./results/$INDIR/$NAME/$STARTTIME-RUNNING"
+if [ "$INDIR" = "." ]
+then ENV="$NAME" 
+else ENV="$(basename "$INDIR")"; fi
 
-echo -e "  ===  RUNNING $INPUT at $STARTTIME ===  \n"
+echo -e "  ===  RUNNING $INDIR/$NAME at $(date) ===  "
 
-#nvidia-smi
-
+nvidia-smi
 
 conda=micromamba
 $conda shell init --shell=bash                     >/dev/null
@@ -31,31 +28,22 @@ eval "$($conda shell hook --shell=bash)"           >/dev/null
 $conda activate "$ENV" || $conda activate cellnet  >/dev/null
 
 
-mkdir -p "$OUTDIR"
-
-rsync -a "." "$OUTDIR" --exclude .git --exclude results --filter=':- .gitignore'
-
-INPUT="$OUTDIR/$NAME.py"
-OUTPUT="$OUTDIR/$NAME.ipynb"
-mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT"
-
-TIMESTAMPFILE="$OUTDIR/$STARTTIME-TIMESTAMP"
+TIMESTAMPFILE="$OUTDIR/TIMESTAMP"
 touch "$TIMESTAMPFILE"
 SECONDS=0
 
-
-jupytext --to notebook --execute -o "$OUTPUT" "$INPUT"
-
+export BATCHED_RUN=1
+jupytext --to notebook --execute -o "$OUTDIR/$NAME.ipynb" "$INPUT"
 
 duration="$SECONDS"
 RUNTIME="$(date -ud "@$duration" +%H%M%S)"
 echo -e "\n> Notebook execution time (hhmmss) $RUNTIME"
 
-find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" -not -path '.gitignore' -delete
-find "$OUTDIR" -depth ! -newer "$TIMESTAMPFILE" -not -path '.gitignore' -type d -empty -delete
+find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" -delete
+find "$OUTDIR" -name '*.pyc' -delete
+find "$OUTDIR" -depth -type d -empty -delete
 rm "$TIMESTAMPFILE"
 
-mv "_____________$SLURM_JOBID.RUNNING" "$OUTDIR/$SLURM_JOBID.log"
+mv "_____________$SLURM_JOBID-RUNNING" "$OUTDIR/$SLURM_JOBID.log"
 
 mv "$OUTDIR" "${OUTDIR%"-RUNNING"}-$RUNTIME"
-
