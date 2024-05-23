@@ -89,7 +89,7 @@ def regplot(R, dim, key2text):
   for ax, (key, text) in zip(axs.flat, key2text.items()):
     if key in "ta va tl vl".split(' '):
       ax = sns.scatterplot(ax=ax, data=R, 
-                          x='s', y=key, hue=R[vi].map(lambda l: l[0])) 
+        x=dim, y=key, hue=R[vi].map(lambda l: l[0])) 
       sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax) 
       ax.set_title(f'{text} vs {key2text[dim]}')
       ax.set_xlabel(key2text[dim])
