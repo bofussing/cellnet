@@ -1,6 +1,6 @@
 # %% [markdown]
 # # CellNet
-# ## Overfit on images [1,2,4]
+# ## Try Trainaugs with Fraction
 
 # %% # Imports 
 import ast
@@ -89,7 +89,7 @@ def plot_overlay(x,m,z, ax=None):
   return ax
 
 def plot_grid(grid, **loader_kwargs):
-  loader = data.mk_loader([1], cfg=cfg, bs=prod(grid), fraction = 0.3 if DRAFT else 1.0, **loader_kwargs)
+  loader = data.mk_loader([1], cfg=cfg, bs=prod(grid), **loader_kwargs)
   B = next(iter(loader))
   B = zip(B['image'], B['masks'][0], keypoints2heatmap(B))
   for b,ax in zip(B, plot.grid(grid, [cfg.cropsize]*2)[1]):
@@ -133,10 +133,10 @@ def accuracy(y,z, return_counts=False):
   else: return a
 
 def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
-  lr0 = 2e-3
+  lr0 = 5e-3
   optim = torch.optim.Adam(model.parameters(), lr=lr0)
   lossf = torch.nn.MSELoss()  # REVERT?
-  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=120, gamma=0.3)
+  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=150, gamma=0.2)
 
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
   for e in range(epochs):
@@ -190,15 +190,15 @@ splits_main = [([2,4], [1]), ([1,4], [2]), ([1,2], [4])]
 splits_one = [([1], [1])]
 splits = splits_main
 
-ps = [(x, x) for x in [1]] #[0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1]]  
-P = 's'  # 'f'
+ps = [(x, x) for x in [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1]]  
+P = 'f'
 
 results = pd.DataFrame(columns=[P, 'ti', 'vi', 'ta', 'va', 'tl', 'vl', 'ty', 'vy'])
 
 for _p, p in ps:
   for ti, vi in splits:
-    traindl = data.mk_loader(ti, bs=1, transforms=testaugs, fraction=p, cfg=cfg)  # REVERT: transforms=trainaugs
-    valdl   = data.mk_loader(vi, bs=1, transforms=testaugs, cfg=cfg)  # REVERT: transforms=valaugs
+    traindl = data.mk_loader(ti, bs=8, transforms=trainaugs, fraction=p, cfg=cfg)  # REVERT: transforms=trainaugs
+    valdl   = data.mk_loader(vi, bs=8, transforms=valaugs, cfg=cfg)  # REVERT: transforms=valaugs
 
     model = mk_model()
     log = train(501 if not DRAFT else 2, model, traindl, valdl, info={P: _p})
