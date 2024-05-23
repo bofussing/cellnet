@@ -24,7 +24,7 @@ import util.plot as plot
 CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu'); print('device =', device)
 
-DRAFT = False if os.getenv('BATCHED_RUN', '0')=='1' else True
+DRAFT = False if os.getenv('BATCHED_RUN', '0')=='1' else True; print('DRAFT =', DRAFT)
 if DRAFT: plot.set_zoom(0.5)
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
@@ -86,6 +86,23 @@ def plot_overlay(x,m,z, ax=None):
   ax = plot.image(x, ax=ax)
   plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   plot.heatmap(  z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
+  return ax
+
+def plot_diff(x,m,y,z,k, ax=None):
+  title = f"Difference between Target and Predicted Heatmap"
+  D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
+  ax = plot.image(D, ax=ax, cmap='coolwarm')
+  plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
+  plot.points(ax, k, cfg.sigma)
+  return ax
+
+
+def plot_diff(x,m,y,z,k, ax=None):
+  title = f"Difference between Target and Predicted Heatmap"
+  D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
+  ax = plot.image(D, ax=ax, cmap='coolwarm')
+  plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
+  plot.points(ax, k, cfg.sigma)
   return ax
 
 def plot_grid(grid, **loader_kwargs):
@@ -188,13 +205,14 @@ def train(epochs, model, traindl, valdl=None, plot_live = DRAFT, info={}):
 
 splits_main = [([2,4], [1]), ([1,4], [2]), ([1,2], [4])]
 splits_one = [([1], [1])]
-splits = splits_main
+splits = splits_one if DRAFT else splits_main
 
-ps = [(x, x) for x in [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1]]  
+ps = [('1', 1)]# [(f'{x:.0%}', x) for x in [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1]] 
 P = 'f'
 
 results = pd.DataFrame(columns=[P, 'ti', 'vi', 'ta', 'va', 'tl', 'vl', 'ty', 'vy'])
 
+os.makedirs('plots', exist_ok=True)
 for _p, p in ps:
   for ti, vi in splits:
     traindl = data.mk_loader(ti, bs=8, transforms=trainaugs, fraction=p, cfg=cfg)  # REVERT: transforms=trainaugs
@@ -203,39 +221,24 @@ for _p, p in ps:
     model = mk_model()
     log = train(501 if not DRAFT else 2, model, traindl, valdl, info={P: _p})
 
-    model.eval()
-    with torch.no_grad():
-      # save predictions instead of model, because more compact. use different logic to save best model to disk
-      ty, vy = [[cpu(model(next(iter(data.mk_loader([i], bs=1, transforms=testaugs, shuffle=False, cfg=cfg)))
-                       ['image'].to(device))) for i in ids] for ids in [ti, vi]]
-
-    _row =  pd.DataFrame(dict(**log.iloc[-1], ti=[ti], vi=[vi], ty=[ty], vy=[vy], **{P: [_p]}))
+    _row =  pd.DataFrame(dict(**log.iloc[-1], ti=[ti], vi=[vi], **{P: [p]}))
     results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
+
+    # save predictions to disk
+    for ii, t in [(ti, 'T'), (vi, 'V')]:
+      for i in ii:
+        B = next(iter(data.mk_loader([i], bs=1, transforms=testaugs, shuffle=False, cfg=cfg)))
+        x,m,z,k = [cpu(v[0]) for v in [B['image'], B['masks'][0], keypoints2heatmap(B), B['keypoints']]]
+
+        model.eval()
+        with torch.no_grad(): y = cpu(model(B['image'].to(device)))
+
+        ax = plot_overlay(x,m,y);  ax.figure.savefig(f'plots/{_p}={p}-{t}{i}.pred.png')
+        ax = plot_diff(x,m,y,z,k); ax.figure.savefig(f'plots/{_p}={p}-{t}{i}.diff.png')
+        plt.close('all')
 
     
 # %% # save the results as csv. exclude model column; plot accuracies
 results.drop(columns=['ty', 'vy']).to_csv('results.csv', index=False, sep=';')
 R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
 plot.regplot(R, P, key2text)
-
-# %% # Plot the predictions
-def plot_diff(x,m,y,z,k, ax=None):
-  title = f"Difference between Target and Predicted Heatmap"
-  D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
-  ax = plot.image(D, ax=ax, cmap='coolwarm')
-  plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  plot.points(ax, k, cfg.sigma)
-  return ax
-
-for _,r in results.iterrows():
-  for _i, _y in [('vi', 'vy'), ('ti', 'ty')]:
-    for i, y in zip(r[_i], r[_y]):
-      y = y[0]
-      B = next(iter(data.mk_loader([i], bs=1, transforms=testaugs, shuffle=False, cfg=cfg)))
-      x,m,z,k = [cpu(v[0]) for v in [B['image'], B['masks'][0], keypoints2heatmap(B), B['keypoints']]]
-      
-      plot_overlay(x,m,y)
-      plot_diff(x,m,y,z,k)
-
-# %%
-plt.close('all')
