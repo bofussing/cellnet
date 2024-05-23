@@ -39,7 +39,8 @@ duration="$SECONDS"
 RUNTIME="$(date -ud "@$duration" +%H%M%S)"
 echo -e "\n> Notebook execution time (hhmmss) $RUNTIME"
 
-find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" -delete
+if [ -f "$OUTDIR/$NAME.ipynb" ]; then rm "$INPUT"; fi
+find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" ! -wholename "$INPUT" -delete
 find "$OUTDIR" -name '*.pyc' -delete
 find "$OUTDIR" -depth -type d -empty -delete
 rm "$TIMESTAMPFILE"
