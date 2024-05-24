@@ -1,0 +1,151 @@
+  ===  RUNNING ./cellnet at Wed May 22 17:06:22 EEST 2024 ===  
+Wed May 22 17:06:23 2024       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.54.15              Driver Version: 550.54.15      CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla V100-SXM2-32GB           Off |   00000000:1B:00.0 Off |                    0 |
+| N/A   35C    P0             55W /  300W |       0MiB /  32768MiB |      1%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+0.05s - Debugger warning: It seems that frozen modules are being used, which may
+0.00s - make the debugger miss breakpoints. Please pass -Xfrozen_modules=off
+0.00s - to python to disable frozen modules.
+0.00s - Note: Debugging will proceed. Set PYDEVD_DISABLE_FILE_VALIDATION=1 to disable this validation.
+[jupytext] Reading ./results/./cellnet/240522-170605-RUNNING/cellnet.py in format py
+[jupytext] Setting kernel python3
+[jupytext] Updating notebook metadata with '{"kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3 (ipykernel)"}}'
+[jupytext] Executing notebook with kernel python3
+Traceback (most recent call last):
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/bin/jupytext", line 10, in <module>
+    sys.exit(jupytext())
+             ^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 497, in jupytext
+    exit_code += jupytext_single_file(nb_file, args, log)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 734, in jupytext_single_file
+    exec_proc.preprocess(notebook, resources=resources)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 103, in preprocess
+    self.preprocess_cell(cell, resources, index)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 124, in preprocess_cell
+    cell = self.execute_cell(cell, index, store_history=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupyter_core/utils/__init__.py", line 165, in wrapped
+    return loop.run_until_complete(inner)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 1062, in async_execute_cell
+    await self._check_raise_for_error(cell, cell_index, exec_reply)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 918, in _check_raise_for_error
+    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
+nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
+------------------
+results.drop(columns=['ty', 'vy']).to_csv('results.csv', index=False, sep=';')
+R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
+plot.regplot(R, P, key2text)
+------------------
+
+
+[0;31m---------------------------------------------------------------------------[0m
+[0;31mValueError[0m                                Traceback (most recent call last)
+Cell [0;32mIn[6], line 3[0m
+[1;32m      1[0m results[38;5;241m.[39mdrop(columns[38;5;241m=[39m[[38;5;124m'[39m[38;5;124mty[39m[38;5;124m'[39m, [38;5;124m'[39m[38;5;124mvy[39m[38;5;124m'[39m])[38;5;241m.[39mto_csv([38;5;124m'[39m[38;5;124mresults.csv[39m[38;5;124m'[39m, index[38;5;241m=[39m[38;5;28;01mFalse[39;00m, sep[38;5;241m=[39m[38;5;124m'[39m[38;5;124m;[39m[38;5;124m'[39m)
+[1;32m      2[0m R [38;5;241m=[39m pd[38;5;241m.[39mread_csv([38;5;124m'[39m[38;5;124mresults.csv[39m[38;5;124m'[39m, sep[38;5;241m=[39m[38;5;124m'[39m[38;5;124m;[39m[38;5;124m'[39m, converters[38;5;241m=[39m[38;5;28mdict[39m(ti[38;5;241m=[39mast[38;5;241m.[39mliteral_eval, vi[38;5;241m=[39mast[38;5;241m.[39mliteral_eval))[38;5;241m.[39mrename(columns[38;5;241m=[39m[38;5;28mdict[39m(vi[38;5;241m=[39mkey2text[[38;5;124m'[39m[38;5;124mvi[39m[38;5;124m'[39m]))
+[0;32m----> 3[0m [43mplot[49m[38;5;241;43m.[39;49m[43mregplot[49m[43m([49m[43mR[49m[43m,[49m[43m [49m[43mP[49m[43m,[49m[43m [49m[43mkey2text[49m[43m)[49m
+
+File [0;32m~/sanger/results/cellnet/240522-170605-RUNNING/util/plot.py:91[0m, in [0;36mregplot[0;34m(R, dim, key2text)[0m
+[1;32m     89[0m [38;5;28;01mfor[39;00m ax, (key, text) [38;5;129;01min[39;00m [38;5;28mzip[39m(axs[38;5;241m.[39mflat, key2text[38;5;241m.[39mitems()):
+[1;32m     90[0m   [38;5;28;01mif[39;00m key [38;5;129;01min[39;00m [38;5;124m"[39m[38;5;124mta va tl vl[39m[38;5;124m"[39m[38;5;241m.[39msplit([38;5;124m'[39m[38;5;124m [39m[38;5;124m'[39m):
+[0;32m---> 91[0m     ax [38;5;241m=[39m [43msns[49m[38;5;241;43m.[39;49m[43mscatterplot[49m[43m([49m[43max[49m[38;5;241;43m=[39;49m[43max[49m[43m,[49m[43m [49m[43mdata[49m[38;5;241;43m=[39;49m[43mR[49m[43m,[49m[43m [49m
+[1;32m     92[0m [43m                        [49m[43mx[49m[38;5;241;43m=[39;49m[38;5;124;43m'[39;49m[38;5;124;43ms[39;49m[38;5;124;43m'[39;49m[43m,[49m[43m [49m[43my[49m[38;5;241;43m=[39;49m[43mkey[49m[43m,[49m[43m [49m[43mhue[49m[38;5;241;43m=[39;49m[43mR[49m[43m[[49m[43mvi[49m[43m][49m[38;5;241;43m.[39;49m[43mmap[49m[43m([49m[38;5;28;43;01mlambda[39;49;00m[43m [49m[43ml[49m[43m:[49m[43m [49m[43ml[49m[43m[[49m[38;5;241;43m0[39;49m[43m][49m[43m)[49m[43m)[49m 
+[1;32m     93[0m     sns[38;5;241m.[39mregplot(x[38;5;241m=[39mdim, y[38;5;241m=[39mkey, data[38;5;241m=[39mR, scatter[38;5;241m=[39m[38;5;28;01mFalse[39;00m, ax[38;5;241m=[39max) 
+[1;32m     94[0m     ax[38;5;241m.[39mset_title([38;5;124mf[39m[38;5;124m'[39m[38;5;132;01m{[39;00mtext[38;5;132;01m}[39;00m[38;5;124m vs [39m[38;5;132;01m{[39;00mkey2text[dim][38;5;132;01m}[39;00m[38;5;124m'[39m)
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/relational.py:615[0m, in [0;36mscatterplot[0;34m(data, x, y, hue, size, style, palette, hue_order, hue_norm, sizes, size_order, size_norm, markers, style_order, legend, ax, **kwargs)[0m
+[1;32m    606[0m [38;5;28;01mdef[39;00m [38;5;21mscatterplot[39m(
+[1;32m    607[0m     data[38;5;241m=[39m[38;5;28;01mNone[39;00m, [38;5;241m*[39m,
+[1;32m    608[0m     x[38;5;241m=[39m[38;5;28;01mNone[39;00m, y[38;5;241m=[39m[38;5;28;01mNone[39;00m, hue[38;5;241m=[39m[38;5;28;01mNone[39;00m, size[38;5;241m=[39m[38;5;28;01mNone[39;00m, style[38;5;241m=[39m[38;5;28;01mNone[39;00m,
+[0;32m   (...)[0m
+[1;32m    612[0m     [38;5;241m*[39m[38;5;241m*[39mkwargs
+[1;32m    613[0m ):
+[0;32m--> 615[0m     p [38;5;241m=[39m [43m_ScatterPlotter[49m[43m([49m
+[1;32m    616[0m [43m        [49m[43mdata[49m[38;5;241;43m=[39;49m[43mdata[49m[43m,[49m
+[1;32m    617[0m [43m        [49m[43mvariables[49m[38;5;241;43m=[39;49m[38;5;28;43mdict[39;49m[43m([49m[43mx[49m[38;5;241;43m=[39;49m[43mx[49m[43m,[49m[43m [49m[43my[49m[38;5;241;43m=[39;49m[43my[49m[43m,[49m[43m [49m[43mhue[49m[38;5;241;43m=[39;49m[43mhue[49m[43m,[49m[43m [49m[43msize[49m[38;5;241;43m=[39;49m[43msize[49m[43m,[49m[43m [49m[43mstyle[49m[38;5;241;43m=[39;49m[43mstyle[49m[43m)[49m[43m,[49m
+[1;32m    618[0m [43m        [49m[43mlegend[49m[38;5;241;43m=[39;49m[43mlegend[49m
+[1;32m    619[0m [43m    [49m[43m)[49m
+[1;32m    621[0m     p[38;5;241m.[39mmap_hue(palette[38;5;241m=[39mpalette, order[38;5;241m=[39mhue_order, norm[38;5;241m=[39mhue_norm)
+[1;32m    622[0m     p[38;5;241m.[39mmap_size(sizes[38;5;241m=[39msizes, order[38;5;241m=[39msize_order, norm[38;5;241m=[39msize_norm)
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/relational.py:396[0m, in [0;36m_ScatterPlotter.__init__[0;34m(self, data, variables, legend)[0m
+[1;32m    387[0m [38;5;28;01mdef[39;00m [38;5;21m__init__[39m([38;5;28mself[39m, [38;5;241m*[39m, data[38;5;241m=[39m[38;5;28;01mNone[39;00m, variables[38;5;241m=[39m{}, legend[38;5;241m=[39m[38;5;28;01mNone[39;00m):
+[1;32m    388[0m 
+[1;32m    389[0m     [38;5;66;03m# TODO this is messy, we want the mapping to be agnostic about[39;00m
+[1;32m    390[0m     [38;5;66;03m# the kind of plot to draw, but for the time being we need to set[39;00m
+[1;32m    391[0m     [38;5;66;03m# this information so the SizeMapping can use it[39;00m
+[1;32m    392[0m     [38;5;28mself[39m[38;5;241m.[39m_default_size_range [38;5;241m=[39m (
+[1;32m    393[0m         np[38;5;241m.[39mr_[[38;5;241m.5[39m, [38;5;241m2[39m] [38;5;241m*[39m np[38;5;241m.[39msquare(mpl[38;5;241m.[39mrcParams[[38;5;124m"[39m[38;5;124mlines.markersize[39m[38;5;124m"[39m])
+[1;32m    394[0m     )
+[0;32m--> 396[0m     [38;5;28;43msuper[39;49m[43m([49m[43m)[49m[38;5;241;43m.[39;49m[38;5;21;43m__init__[39;49m[43m([49m[43mdata[49m[38;5;241;43m=[39;49m[43mdata[49m[43m,[49m[43m [49m[43mvariables[49m[38;5;241;43m=[39;49m[43mvariables[49m[43m)[49m
+[1;32m    398[0m     [38;5;28mself[39m[38;5;241m.[39mlegend [38;5;241m=[39m legend
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/_base.py:634[0m, in [0;36mVectorPlotter.__init__[0;34m(self, data, variables)[0m
+[1;32m    629[0m [38;5;66;03m# var_ordered is relevant only for categorical axis variables, and may[39;00m
+[1;32m    630[0m [38;5;66;03m# be better handled by an internal axis information object that tracks[39;00m
+[1;32m    631[0m [38;5;66;03m# such information and is set up by the scale_* methods. The analogous[39;00m
+[1;32m    632[0m [38;5;66;03m# information for numeric axes would be information about log scales.[39;00m
+[1;32m    633[0m [38;5;28mself[39m[38;5;241m.[39m_var_ordered [38;5;241m=[39m {[38;5;124m"[39m[38;5;124mx[39m[38;5;124m"[39m: [38;5;28;01mFalse[39;00m, [38;5;124m"[39m[38;5;124my[39m[38;5;124m"[39m: [38;5;28;01mFalse[39;00m}  [38;5;66;03m# alt., used DefaultDict[39;00m
+[0;32m--> 634[0m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43massign_variables[49m[43m([49m[43mdata[49m[43m,[49m[43m [49m[43mvariables[49m[43m)[49m
+[1;32m    636[0m [38;5;66;03m# TODO Lots of tests assume that these are called to initialize the[39;00m
+[1;32m    637[0m [38;5;66;03m# mappings to default values on class initialization. I'd prefer to[39;00m
+[1;32m    638[0m [38;5;66;03m# move away from that and only have a mapping when explicitly called.[39;00m
+[1;32m    639[0m [38;5;28;01mfor[39;00m var [38;5;129;01min[39;00m [[38;5;124m"[39m[38;5;124mhue[39m[38;5;124m"[39m, [38;5;124m"[39m[38;5;124msize[39m[38;5;124m"[39m, [38;5;124m"[39m[38;5;124mstyle[39m[38;5;124m"[39m]:
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/_base.py:679[0m, in [0;36mVectorPlotter.assign_variables[0;34m(self, data, variables)[0m
+[1;32m    674[0m [38;5;28;01melse[39;00m:
+[1;32m    675[0m     [38;5;66;03m# When dealing with long-form input, use the newer PlotData[39;00m
+[1;32m    676[0m     [38;5;66;03m# object (internal but introduced for the objects interface)[39;00m
+[1;32m    677[0m     [38;5;66;03m# to centralize / standardize data consumption logic.[39;00m
+[1;32m    678[0m     [38;5;28mself[39m[38;5;241m.[39minput_format [38;5;241m=[39m [38;5;124m"[39m[38;5;124mlong[39m[38;5;124m"[39m
+[0;32m--> 679[0m     plot_data [38;5;241m=[39m [43mPlotData[49m[43m([49m[43mdata[49m[43m,[49m[43m [49m[43mvariables[49m[43m)[49m
+[1;32m    680[0m     frame [38;5;241m=[39m plot_data[38;5;241m.[39mframe
+[1;32m    681[0m     names [38;5;241m=[39m plot_data[38;5;241m.[39mnames
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/_core/data.py:58[0m, in [0;36mPlotData.__init__[0;34m(self, data, variables)[0m
+[1;32m     51[0m [38;5;28;01mdef[39;00m [38;5;21m__init__[39m(
+[1;32m     52[0m     [38;5;28mself[39m,
+[1;32m     53[0m     data: DataSource,
+[1;32m     54[0m     variables: [38;5;28mdict[39m[[38;5;28mstr[39m, VariableSpec],
+[1;32m     55[0m ):
+[1;32m     57[0m     data [38;5;241m=[39m handle_data_source(data)
+[0;32m---> 58[0m     frame, names, ids [38;5;241m=[39m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43m_assign_variables[49m[43m([49m[43mdata[49m[43m,[49m[43m [49m[43mvariables[49m[43m)[49m
+[1;32m     60[0m     [38;5;28mself[39m[38;5;241m.[39mframe [38;5;241m=[39m frame
+[1;32m     61[0m     [38;5;28mself[39m[38;5;241m.[39mnames [38;5;241m=[39m names
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/_core/data.py:232[0m, in [0;36mPlotData._assign_variables[0;34m(self, data, variables)[0m
+[1;32m    230[0m     [38;5;28;01melse[39;00m:
+[1;32m    231[0m         err [38;5;241m+[39m[38;5;241m=[39m [38;5;124m"[39m[38;5;124mAn entry with this name does not appear in `data`.[39m[38;5;124m"[39m
+[0;32m--> 232[0m     [38;5;28;01mraise[39;00m [38;5;167;01mValueError[39;00m(err)
+[1;32m    234[0m [38;5;28;01melse[39;00m:
+[1;32m    235[0m 
+[1;32m    236[0m     [38;5;66;03m# Otherwise, assume the value somehow represents data[39;00m
+[1;32m    237[0m 
+[1;32m    238[0m     [38;5;66;03m# Ignore empty data structures[39;00m
+[1;32m    239[0m     [38;5;28;01mif[39;00m [38;5;28misinstance[39m(val, Sized) [38;5;129;01mand[39;00m [38;5;28mlen[39m(val) [38;5;241m==[39m [38;5;241m0[39m:
+
+[0;31mValueError[0m: Could not interpret value `s` for `x`. An entry with this name does not appear in `data`.
+
+
+> Notebook execution time (hhmmss) 022808
