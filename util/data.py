@@ -29,7 +29,7 @@ def batched(f):
   return inner
 
 
-def mk_loader(ids, bs, transforms, cfg, fraction=1.0, sparsity=1.0, shuffle=True):
+def mk_loader(ids, bs, transforms, cfg, shuffle=True):
   def collate(S):
     return dict(
       image = torch.stack([s['image'] for s in S]),
@@ -39,17 +39,20 @@ def mk_loader(ids, bs, transforms, cfg, fraction=1.0, sparsity=1.0, shuffle=True
     )
 
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
-  return torch.utils.data.DataLoader(CellnetDataset(ids, transforms=transforms, fraction=fraction, sparsity=sparsity, batch_size=bs, **cfg.__dict__), 
+  return torch.utils.data.DataLoader(CellnetDataset(ids, transforms=transforms, batch_size=bs, **cfg.__dict__), 
     batch_size=bs, shuffle=shuffle, collate_fn= collate,
-    persistent_workers=True, pin_memory=True, num_workers = 8 if cfg.CUDA else 2)
+    persistent_workers=True, pin_memory=True, num_workers = 8 if torch.cuda.is_available() else 2)
 
 
-def mk_norms(norm_using_images, cfg):
+def mk_XNorm(norm_using_images):
+  X = load_images(norm_using_images)
+  m = list(X.mean(axis=(0,1,2))/255); s = list(X.std(axis=(0,1,2))/255)
+  return lambda **kw: A.Normalize(mean=m, std=s, **kw)
+
+
+def mk_kp2mh_yunnorm(norm_using_images, cfg):
   """Z-score norm improves DNN training according to @lecun2002efficient. BWHC"""
   ds = CellnetDataset(norm_using_images, **cfg.__dict__)
-
-  XNorm = lambda **kw: A.Normalize(mean=list(ds.X.mean(axis=(0,1,2))/255), 
-                                    std=list(ds.X.std (axis=(0,1,2))/255), **kw)
 
   Y = np.stack([Keypoints2Heatmap(cfg.sigma, ynorm=lambda y:y, labels_to_include=[1])(x.transpose(2,0,1),[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
   
@@ -58,13 +61,14 @@ def mk_norms(norm_using_images, cfg):
   yunnorm = lambda y: y*ymax
   # Y = ((Y - ymean) / ystd).astype(np.float32)  # unit norm, using dataset wide mean and std
 
-  keypoints2heatmap = batched(Keypoints2Heatmap(cfg.sigma, ynorm, labels_to_include=[1]))
-  return XNorm, keypoints2heatmap, yunnorm
+  kp2mh = batched(Keypoints2Heatmap(cfg.sigma, ynorm, labels_to_include=[1]))
+  return kp2mh, yunnorm
 
 
 class CellnetDataset(torch.utils.data.Dataset):
-  def __init__(self, image_ids, sigma, sparsity=1.0, fraction=1.0, batch_size=None, maxdist=1e9, transforms=None, point_annotations_file='data/points.json', 
-               label2int=lambda l:{'Live Cell':1, 'Dead cell/debris':2}[l], **_junk):
+  def __init__(self, image_ids, sigma, maxdist, sparsity=1.0, fraction=1.0, batch_size=None, transforms=None, 
+               point_annotations_file='data/points.json', label2int=lambda l:{'Live Cell':1, 'Dead cell/debris':2}[l], 
+               **_junk):
     super().__init__()
     self.batch_size = noneor(batch_size, len(image_ids))
     self.image_ids=image_ids; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
