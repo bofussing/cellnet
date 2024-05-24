@@ -163,7 +163,7 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
 
 
 splits = [([1], [2])]# if DRAFT else [([2,4], [1]), ([1,4], [2]), ([1,2], [4])]
-P = 'fraction'; ps = [1] if DRAFT else [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1]
+P = 'fraction'; ps = [1]# if DRAFT else [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1]
 
 results = pd.DataFrame()
 
