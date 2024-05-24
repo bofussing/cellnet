@@ -75,7 +75,7 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unk
   ax.set_title(f"Training\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
   
   for key in (log if keys is None else keys):
-    ax.plot(log[key], label=key2text[key] if key2text else key)
+    ax.plot(log[key].map(lambda x: x if x > 1e-9 else np.nan), label=key2text[key] if key2text else key)
 
   ax.set_yscale('log')
   ax.legend(loc='upper right')
