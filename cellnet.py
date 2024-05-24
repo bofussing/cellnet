@@ -1,6 +1,6 @@
 # %% [markdown]
 # # CellNet
-# Overfit WITHOUT data augmentations to 1 image
+# Overfit 1 image without dataaugmentations
 
 # %% # Imports 
 import ast
@@ -168,7 +168,7 @@ def train(epochs, model, optim, lossf, sched, traindl, valdl=None, info={}):
   return log
 
 
-splits = [([1], [1])]# if DRAFT else [([2,4], [1]), ([1,4], [2]), ([1,2], [4])]
+splits = [([1], [2])]# if DRAFT else [([2,4], [1]), ([1,4], [2]), ([1,2], [4])]
 P = 'f'; ps = [('100%', 1)] if DRAFT else [(f'{x:.0%}', x) for x in [0.1, 0.3, 0.5, 0.7, 0.9, 0.95, 1]] 
 
 results = pd.DataFrame()
@@ -176,9 +176,9 @@ results = pd.DataFrame()
 [os.makedirs(p, exist_ok=True) for p in ('preds', 'plots')]
 for _p, p in ps:
   for ti, vi in splits:
-    traindl = data.mk_loader(ti, bs=1, transforms=testaugs, fraction=p, cfg=cfg)  # REVERT: transforms=trainaugs
-    valdl   = data.mk_loader(vi, bs=1, transforms=testaugs, cfg=cfg)  # REVERT: transforms=valaugs
-
+    taugs = testaugs; vaugs = testaugs
+    traindl = data.mk_loader(ti, bs=1 if taugs==testaugs else 8, transforms=taugs, fraction=p, cfg=cfg)  # REVERT: transforms=trainaugs
+    valdl   = data.mk_loader(vi, bs=1 if taugs==testaugs else 8, transforms=vaugs, cfg=cfg)  # REVERT: transforms=valaugs
     model = mk_model()
     optim = torch.optim.Adam(model.parameters(), lr=1e-2)
     lossf = torch.nn.MSELoss()  

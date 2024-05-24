@@ -17,6 +17,6 @@ mkdir -p "$OUTDIR"
 rsync -a "." "$OUTDIR" --exclude .git --exclude results --filter=':- .gitignore'
 
 INPUT="$OUTDIR/$NAME.py"
-mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT" 2>&1/dev/null
+mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT" 
 
 sbatch bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR"
