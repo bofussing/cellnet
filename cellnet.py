@@ -82,6 +82,7 @@ def plot_diff(x,m,y,z,k, ax=None, sigma=3.5):
   D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
   ax = plot.image(D, ax=ax, cmap='coolwarm')
   plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
+  plot.points(ax, k, sigma)
   return ax
 
 
@@ -203,7 +204,7 @@ for p in ps:
         id = f"{P}={p}-{t}{i}"
         #np.save(f'preds/{id}.npy', y)
         ax = plot_overlay(x,m,y);  ax.figure.savefig(f'plots/{id}.pred.png') # type: ignore
-        ax = plot_diff(x,m,y,z,k); ax.figure.savefig(f'plots/{id}.diff.png') # type: ignore
+        ax = plot_diff(x,m,y,z,k, sigma=cfg.sigma); ax.figure.savefig(f'plots/{id}.diff.png') # type: ignore
         plt.close('all')
 
     
