@@ -1,6 +1,6 @@
 # %% [markdown]
 # # CellNet
-# Overfit 1 image with val augs
+# Overfit 1 image with no augmentations
 
 # %% # Imports 
 import ast
@@ -71,10 +71,11 @@ def mkAugs(mode):
 
 # %% # Plot data 
 
-def plot_overlay(x,m,z, ax=None):
+def plot_overlay(x,m,z, ax=None, sigma=3.5):
   ax = plot.image(x, ax=ax)
   plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   plot.heatmap(  z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
+  plot.points(ax, k, sigma)
   return ax
 
 def plot_diff(x,m,y,z,k, ax=None, sigma=3.5):
@@ -147,7 +148,7 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
 
   for e in range(epochs):
     L = log.loc[e]
-    #L['lr'] = optim.param_groups[0]['lr']/log.loc[0]['lr'] 
+    L['lr'] = optim.param_groups[0]['lr']/log.loc[0]['lr'] 
   
     model.train()
     L['tl'], L['ta'] = epoch(traindl, train=True)
@@ -178,14 +179,14 @@ for p in ps:
       sparsity=1)
       | {P: p}))
     loader = lambda mode: data.mk_loader(ti, bs=1 if mode=='test' else 8, transforms=mkAugs(mode), shuffle=False, cfg=cfg)
-    traindl, valdl = loader('val'), loader('test')
+    traindl, valdl = loader('test'), loader('test')
     
     kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
 
     model = mk_model()
-    optim = torch.optim.Adam(model.parameters(), lr=1e-2)
+    optim = torch.optim.Adam(model.parameters(), lr=5e-3)
     lossf = torch.nn.MSELoss()
-    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=100, gamma=0.2)
+    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=150, gamma=0.1)
 
     log = train((10 if CUDA else 2) if DRAFT else 501, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
@@ -203,7 +204,7 @@ for p in ps:
 
         id = f"{P}={p}-{t}{i}"
         #np.save(f'preds/{id}.npy', y)
-        ax = plot_overlay(x,m,y);  ax.figure.savefig(f'plots/{id}.pred.png') # type: ignore
+        ax = plot_overlay(x,m,y,  sigma=cfg.sigma); ax.figure.savefig(f'plots/{id}.pred.png') # type: ignore
         ax = plot_diff(x,m,y,z,k, sigma=cfg.sigma); ax.figure.savefig(f'plots/{id}.diff.png') # type: ignore
         plt.close('all')
 
