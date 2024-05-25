@@ -1,6 +1,6 @@
 # %% [markdown]
 # # CellNet
-# Overfit 1 image without augmentations
+# Overfit 1 image with val augs
 
 # %% # Imports 
 import ast
@@ -178,7 +178,7 @@ for p in ps:
       sparsity=1)
       | {P: p}))
     loader = lambda mode: data.mk_loader(ti, bs=1 if mode=='test' else 8, transforms=mkAugs(mode), shuffle=False, cfg=cfg)
-    traindl, valdl = loader('test'), loader('test')
+    traindl, valdl = loader('val'), loader('test')
     
     kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
 
