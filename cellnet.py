@@ -60,6 +60,7 @@ def mkAugs(mode):
     val   = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
                *vals]),
     train = T([A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),
+              # NOTE: issue with resize is that the keypoint sizes will not be updated
                A.Rotate(),
                A.AdvancedBlur(),
                A.Equalize(),
