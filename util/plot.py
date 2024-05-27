@@ -71,14 +71,16 @@ def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
 def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unknown):
   if clear: clear_output(wait=True)
 
-  _, ax = plt.subplots(figsize=(10,7))
-  ax.set_title(f"Training\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
+  _, (ax1, ax2) = plt.subplots(2,1, figsize=(10,15))
+  ax1.set_title(f"Training Loss\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
   
   for key in (log if keys is None else keys):
-    ax.plot(log[key].map(lambda x: x if x >= 1e-3 else np.nan), label=key2text[key] if key2text else key)
+    ax = ax1 if key in "lr tl vl".split(' ') else ax2
+    ax.plot(log[key].map(lambda x: x if x >= 1e-4 else np.nan), label=key2text[key] if key2text else key)
 
-  ax.set_yscale('log')
-  ax.legend(loc='upper right')
+  for ax in (ax1, ax2):
+    ax.set_yscale('log')
+    ax.legend(loc='upper right')
   plt.show()
 
 
