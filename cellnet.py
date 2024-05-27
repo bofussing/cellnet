@@ -178,8 +178,8 @@ for p in ps:
       fraction=1, 
       sparsity=1)
       | {P: p}))
-    loader = lambda mode: data.mk_loader(ti, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=cfg)
-    traindl, valdl = loader('val'), loader('test')
+    loader = lambda ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=cfg)
+    traindl, valdl = loader(ti, 'val'), loader(vi, 'test')
     
     kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
 
