@@ -1,6 +1,6 @@
 # %% [markdown]
 # # CellNet
-# Overfit 1 image with no augmentations
+# Overfit 1 image with val augmentations
 
 # %% # Imports 
 import ast
@@ -71,7 +71,7 @@ def mkAugs(mode):
 
 # %% # Plot data 
 
-def plot_overlay(x,m,z, ax=None, sigma=3.5):
+def plot_overlay(x,m,z,k, ax=None, sigma=3.5):
   ax = plot.image(x, ax=ax)
   plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   plot.heatmap(  z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
@@ -94,12 +94,12 @@ if DRAFT and not CUDA:
   def plot_grid(grid, **loader_kwargs):
     loader = data.mk_loader([1], cfg=_cfg, bs=prod(grid), **loader_kwargs)
     B = next(iter(loader))
-    B = zip(B['image'], B['masks'][0], keypoints2heatmap(B))
+    B = zip(B['image'], B['masks'][0], keypoints2heatmap(B), B['keypoints'])
     for b,ax in zip(B, plot.grid(grid, [CROPSIZE]*2)[1]):
       plot_overlay(*[cpu(v) for v in b], ax=ax)
 
   for B in data.mk_loader([1,2,4], cfg=_cfg, bs=1, transforms=mkAugs('test'), shuffle=False):
-    plot_overlay(*[cpu(v[0]) for v in [B['image'], B['masks'][0], keypoints2heatmap(B)]])
+    plot_overlay(*[cpu(v[0]) for v in [B['image'], B['masks'][0], keypoints2heatmap(B), B['keypoints']]])
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
@@ -178,15 +178,15 @@ for p in ps:
       fraction=1, 
       sparsity=1)
       | {P: p}))
-    loader = lambda mode: data.mk_loader(ti, bs=1 if mode=='test' else 8, transforms=mkAugs(mode), shuffle=False, cfg=cfg)
-    traindl, valdl = loader('test'), loader('test')
+    loader = lambda mode: data.mk_loader(ti, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=cfg)
+    traindl, valdl = loader('val'), loader('test')
     
     kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
 
     model = mk_model()
-    optim = torch.optim.Adam(model.parameters(), lr=5e-3)
+    optim = torch.optim.Adam(model.parameters(), lr=1e-3)
     lossf = torch.nn.MSELoss()
-    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=150, gamma=0.1)
+    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=200, gamma=0.1)
 
     log = train((10 if CUDA else 2) if DRAFT else 501, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
@@ -204,8 +204,8 @@ for p in ps:
 
         id = f"{P}={p}-{t}{i}"
         #np.save(f'preds/{id}.npy', y)
-        ax = plot_overlay(x,m,y,  sigma=cfg.sigma); ax.figure.savefig(f'plots/{id}.pred.png') # type: ignore
-        ax = plot_diff(x,m,y,z,k, sigma=cfg.sigma); ax.figure.savefig(f'plots/{id}.diff.png') # type: ignore
+        ax = plot_overlay(x,m,y,k, sigma=cfg.sigma); ax.figure.savefig(f'plots/{id}.pred.png') # type: ignore
+        ax = plot_diff(x,m,y,z,k,  sigma=cfg.sigma); ax.figure.savefig(f'plots/{id}.diff.png') # type: ignore
         plt.close('all')
 
     
