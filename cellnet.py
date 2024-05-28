@@ -119,8 +119,6 @@ mk_model = lambda: smp.Unet(  # NOTE TODO: check if spefically used model automa
     classes=1,
     activation='sigmoid',
   ).to(device)  
-mk_model()
-
 
 # %% # Train 
 
@@ -134,7 +132,7 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
   def epoch(dl, train):
     l = 0; a = 0; b = 0
-    for b, B in enumerate(traindl):
+    for b, B in enumerate(dl):
       x,m = B['image'].to(device), B['masks'][0].to(device)
       z = kp2hm(B).to(device)
 
@@ -211,7 +209,7 @@ for p in [1] if DRAFT else ps:
         #np.save(f'preds/{id}.npy', y)
         ax = plot_overlay(x,m,y,k,l, sigma=cfg.sigma); plot.save(ax, f'plots/{id}.pred.png')
         ax = plot_diff (x,m,y,z,k,l, sigma=cfg.sigma); plot.save(ax, f'plots/{id}.diff.png')
-        #plt.close('all')
+        if not DRAFT: plt.close('all')
 
     
 # %% # save the results as csv. exclude model column; plot accuracies
