@@ -50,7 +50,7 @@ def grid(grid, shape, zoom=None):
   return fig, axs
 
 
-def image(img, ax=None, zoom=None, exact=True, save=None, **imshow_kwargs):
+def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
   global ZOOM
   if zoom is None: zoom = ZOOM
   if img.ndim == 3 and img.shape[0] in (1,3,4): img = np.transpose(img, (1,2,0))
