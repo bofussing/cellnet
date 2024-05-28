@@ -3,7 +3,7 @@
 
 # %% # Imports 
 IMAGES = 'one'; AUGS = 'test'
-P = 'fraction'; ps = [1]# [0.1, 0.33, 0.5, 0.67, 0.9, 0.95, 1]
+P = 'sigma'; ps = [4]#[1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 
 import ast
@@ -152,7 +152,7 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
 
   for e in range(epochs):
     L = log.loc[e]
-    L['lr'] = optim.param_groups[0]['lr']/(log.loc[0]['lr'] if log.loc[0]['lr'] else 1) 
+    L['lr'] = optim.param_groups[0]['lr']
   
     model.train()
     L['tl'], L['ta'] = epoch(traindl, train=True)
