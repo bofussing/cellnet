@@ -31,9 +31,10 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   return image(out, ax=ax)
 
 
-def points(ax, points, radius):
+def points(ax, points, radius, labels=None, colormap={1: 'black', 2: 'green'}):
   """"[(x,y), ...]"""
-  ax.scatter(*zip(*points), facecolors='none', edgecolors='black', marker='o', alpha=0.5, linewidths=10*100, s=np.pi*radius**2*100)
+  cs = 'black' if labels is None else [colormap[i] for i in labels]
+  ax.scatter(*zip(*points), facecolors='none', edgecolors=cs, marker='o', alpha=0.75, linewidths=10*100, s=np.pi*radius**2*100)
   
 
 def grid(grid, shape, zoom=None):
@@ -49,7 +50,7 @@ def grid(grid, shape, zoom=None):
   return fig, axs
 
 
-def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
+def image(img, ax=None, zoom=None, exact=True, save=None, **imshow_kwargs):
   global ZOOM
   if zoom is None: zoom = ZOOM
   if img.ndim == 3 and img.shape[0] in (1,3,4): img = np.transpose(img, (1,2,0))
@@ -60,12 +61,16 @@ def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
     # no whitespace and 1:1 pixel resolution
     fig = plt.figure(frameon=not exact, layout='tight', dpi=1)
     ax = fig.add_axes((0,0,1,1))
-    fig.set_size_inches(img.shape[0]/fig.dpi*zoom, img.shape[1]/fig.dpi*zoom)  
+    fig.set_size_inches(img.shape[1]/fig.dpi*zoom, img.shape[0]/fig.dpi*zoom)  
     ax.axis('off')
 
   img = (img - img.min()) / (1e-9+ img.max() - img.min())
   ax.imshow(img, interpolation='none', **imshow_kwargs)
   return ax
+
+
+def save(ax, path, transparent=False):
+  ax.figure.savefig(path, transparent=transparent, pil_kwargs=dict(compress_level=9))
 
 
 def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unknown):
@@ -76,7 +81,7 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unk
   
   for key in (log if keys is None else keys):
     ax = ax1 if key in "lr tl vl".split(' ') else ax2
-    ax.plot(log[key].map(lambda x: x if x >= 1e-4 else np.nan), label=key2text[key] if key2text else key)
+    ax.plot(log[key], label=key2text[key] if key2text else key)
 
   for ax in (ax1, ax2):
     ax.set_yscale('log')

@@ -45,6 +45,6 @@ find "$OUTDIR" -name '*.pyc' -delete
 find "$OUTDIR" -depth -type d -empty -delete
 rm "$TIMESTAMPFILE"
 
-mv "_____________$SLURM_JOBID-RUNNING" "$OUTDIR/$SLURM_JOBID.log"
+mv "_____________$SLURM_JOBID-RUNNING" "$OUTDIR/$SLURM_JOBID-$RUNTIME.log"
 
-mv "$OUTDIR" "${OUTDIR%"-RUNNING"}-$RUNTIME"
+mv "$OUTDIR" "${OUTDIR%"-RUNNING"}"
