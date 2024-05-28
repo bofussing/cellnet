@@ -75,6 +75,7 @@ def save(ax, path, transparent=False):
 
 def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unknown):
   if clear: clear_output(wait=True)
+  log['lr'] /= log['lr'].max()
 
   _, (ax1, ax2) = plt.subplots(2,1, figsize=(10,15))
   ax1.set_title(f"Training Loss\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
