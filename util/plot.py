@@ -31,10 +31,10 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   return image(out, ax=ax)
 
 
-def points(ax, points, radius, labels=None, colormap={1: 'black', 2: 'green'}):
+def points(ax, points, radius, labels=None, colormap={1: 'black', 2: '#7700ff'}):
   """"[(x,y), ...]"""
   cs = 'black' if labels is None else [colormap[i] for i in labels]
-  ax.scatter(*zip(*points), facecolors='none', edgecolors=cs, marker='o', alpha=0.75, linewidths=10*100, s=np.pi*radius**2*100)
+  ax.scatter(*zip(*points), facecolors='none', edgecolors=cs, marker='o', alpha=0.6, s=np.pi*radius**2*100)
   
 
 def grid(grid, shape, zoom=None):
@@ -75,7 +75,7 @@ def save(ax, path, transparent=False):
 
 def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unknown):
   if clear: clear_output(wait=True)
-  log['lr'] /= log['lr'].max()
+  log['lr'] /= log['lr'].max()    
 
   _, (ax1, ax2) = plt.subplots(2,1, figsize=(10,15))
   ax1.set_title(f"Training Loss\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
@@ -104,32 +104,3 @@ def regplot(R, dim, key2text):
       ax.set_ylabel(key2text[key])
       
       sns.move_legend(ax, "lower left")
-
-
-'''  # Kurven-Schaaren für die ganzen Models und Subsets... Draft 
-from IPython.display import clear_output
-import seaborn as sns; sns.set_style('whitegrid')
-from typing import *
-import pandas as pd
-import colorcet
-
-def train_graph(epochs, keys:List[str], data:pd.DataFrame, clear=False, info={}, **unknown):
-  """Please normalize each """
-  if clear: clear_output(wait=True)
-
-  fig, ax = plt.subplots()
-  ax.set_title(f'Training\n 
-               {", ".join([f"{k}: {v}" for k,v in [("Epoch", epochs), *info.items()]])}')
-  ax.set_xlabel('Epoch'); ax.set_ylabel('Log Value')
-
-  rainbow = colorcet.b_circle_mgbm_67_c31
-  i = len(rainbow) // len(data)
-  hues = rainbow[::i]
-
-  for key, hue in zip(keys, hues):
-    data.query(f"key == {key}").plot(ax=ax, label=key, color=sns.dark_palette(hue, epochs, reverse=True, as_cmap=True))
-
-  ax.set_yscale('log')
-  ax.legend()
-  plt.show()
-'''

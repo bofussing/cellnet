@@ -29,6 +29,7 @@ dependencies:
 
 # TODO: maybe replace these
 - segmentation-models-pytorch  # for UNet
+- ipywidgets
 - scikit-learn  
 
 # needed in conda and pip

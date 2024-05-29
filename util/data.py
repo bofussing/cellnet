@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 from scipy.ndimage import gaussian_filter, distance_transform_edt
 
-from sympy import O
+import os
 import torch
 import torch.utils.data
 
@@ -40,8 +40,7 @@ def mk_loader(ids, bs, transforms, cfg, shuffle=True):
 
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return torch.utils.data.DataLoader(CellnetDataset(ids, transforms=transforms, batch_size=bs, **cfg.__dict__), 
-    batch_size=bs, shuffle=shuffle, collate_fn= collate,
-    persistent_workers=True, pin_memory=True, num_workers = 8 if torch.cuda.is_available() else 2)
+    batch_size=bs, shuffle=shuffle, collate_fn=collate, pin_memory=True, num_workers=8) # TODO: figure out and fix error and change back #8 if torch.cuda.is_available() else 2)
 
 
 def mk_XNorm(norm_using_images):
@@ -74,7 +73,7 @@ class CellnetDataset(torch.utils.data.Dataset):
     self.image_ids=image_ids; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
     self.X = load_images(image_ids)  # NOTE albumentations=BHWC 可是 torch=BCHW
     self.P, self.L = load_points(point_annotations_file, image_ids, label2int)
-    self.M = mask_sparse(self.X, self.P, self.L, maxdist)
+    self.M = mask_sparse(image_ids, self.X, self.P, self.L, maxdist)
 
     if (f:=fraction) < 1.0: 
       x,y = int(self.X.shape[1]*f), int(self.X.shape[2]*f)
@@ -145,36 +144,45 @@ def onehot(hw, P, L):
       A[b, int(y), int(x), l-1] = 1
   return A  # -> BHWC
 
-def mask_sparse(X, P, L, maxdist): 
+def mask_sparse(ids, X, P, L, maxdist): 
   D = onehot(X.shape[1:3], P, L)
   D = D.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
   for b in range(len(P)):
     D[b] = distance_transform_edt(1-D[b])
   D = (D > maxdist).reshape(D.shape)
-  B = mk_fgmask(X, thresh=0.01)
+  B = mk_fgmask(ids, X, thresh=0.01)
   return 1-(B & D)[:,:,:,None].astype(np.float32)
 
-def mk_fgmask(X, thresh=0.01):
-  """X: BHWC"""
-  def get_sess(model_path: str):
-    import onnxruntime as ort
-    providers = [
-      ( "CUDAExecutionProvider",
-        { "device_id": 0,
-          "gpu_mem_limit": int(8000 * 1024 * 1024),  # in bytes
-          "arena_extend_strategy": "kSameAsRequested",
-          "cudnn_conv_algo_search": "HEURISTIC",
-          "do_copy_in_default_stream": True,
-      },),
-      "CPUExecutionProvider" ]
-    opts: ort.SessionOptions = ort.SessionOptions()
-    opts.log_severity_level = 2; opts.log_verbosity_level = 2
-    opts.inter_op_num_threads = 1;  opts.intra_op_num_threads = 1  # otherwise will fail on slurm
-    return ort.InferenceSession(model_path, providers=providers, sess_options=opts)
-  model_path = "data/phaseimaging-combo-v3.onnx"
-  X = np.transpose(X,(0,3,1,2))[:,[2,1],:,:].astype(np.float32)  # now BCHW, and only B and G channels
-  X = (X - X.min()) / (X.max() - X.min())  # NOTE this norm is very relevant for the model to work TODO make it more robust 
-  pred = (sess := get_sess(model_path=model_path)).run(
-    output_names = [out.name for out in sess.get_outputs()], 
-    input_feed   = {sess.get_inputs()[0].name: X})[0]
-  return (pred > thresh).reshape(len(X), *X.shape[2:]).astype(np.uint8)
+def mk_fgmask(ids, X, thresh=0.01):
+  def create_masks(X):
+    """X: BHWC"""
+    def get_sess(model_path: str):
+      import onnxruntime as ort
+      providers = [
+        ( "CUDAExecutionProvider",
+          { "device_id": 0,
+            "gpu_mem_limit": int(8000 * 1024 * 1024),  # in bytes
+            "arena_extend_strategy": "kSameAsRequested",
+            "cudnn_conv_algo_search": "HEURISTIC",
+            "do_copy_in_default_stream": True,
+        },),
+        "CPUExecutionProvider" ]
+      opts: ort.SessionOptions = ort.SessionOptions()
+      opts.log_severity_level = 2; opts.log_verbosity_level = 2
+      opts.inter_op_num_threads = 1;  opts.intra_op_num_threads = 1  # otherwise will fail on slurm
+      return ort.InferenceSession(model_path, providers=providers, sess_options=opts)
+    model_path = "data/phaseimaging-combo-v3.onnx"
+    X = np.transpose(X,(0,3,1,2))[:,[2,1],:,:].astype(np.float32)  # now BCHW, and only B and G channels
+    X = (X - X.min()) / (X.max() - X.min())  # NOTE this norm is very relevant for the model to work TODO make it more robust 
+    pred = (sess := get_sess(model_path=model_path)).run(
+      output_names = [out.name for out in sess.get_outputs()], 
+      input_feed   = {sess.get_inputs()[0].name: X})[0]
+    return (pred > thresh).reshape(len(X), *X.shape[2:]).astype(np.uint8)
+  
+  # if data/masks/fgmasks.npy exists, load it, otherwise create it
+  try: return np.stack([np.load(f'.cache/fgmasks/{i}.npy') for i in ids], axis=0)
+  except FileNotFoundError: 
+    M = create_masks(X)
+    os.makedirs('.cache/fgmasks', exist_ok=True)
+    for i,m in zip(ids, M): np.save(f'.cache/fgmasks/{i}.npy', m)
+    return M

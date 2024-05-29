@@ -4,6 +4,8 @@ figures
 COMMIT 
 PLAN
 .vscode
+
 *-RUNNING
+**/.cache
 
 **/__pycache__
