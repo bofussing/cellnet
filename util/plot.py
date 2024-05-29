@@ -34,7 +34,7 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
 def points(ax, points, radius, labels=None, colormap={1: 'black', 2: '#7700ff'}):
   """"[(x,y), ...]"""
   cs = 'black' if labels is None else [colormap[i] for i in labels]
-  ax.scatter(*zip(*points), facecolors='none', edgecolors=cs, marker='o', alpha=0.6, s=np.pi*radius**2*100)
+  ax.scatter(*zip(*points), facecolors='none', edgecolors=cs, marker='o', alpha=0.6, s=np.pi*radius**2*10000, linewidth=150)
   
 
 def grid(grid, shape, zoom=None):
