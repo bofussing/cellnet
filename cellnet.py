@@ -2,7 +2,7 @@
 # # CellNet
 
 # %% # Imports 
-IMAGES = 'one'; AUGS = 'val'
+IMAGES = 'all'; AUGS = 'val'
 P = 'sigma'; ps = [1, 3, 5, 7, 9, 11, 13]
 
 
@@ -74,12 +74,11 @@ def mkAugs(mode):
 
 
 # %% # Plot data 
-
 def plot_overlay(B, cfg, ax=None):
   ax = plot.image(B.x, ax=ax)
   plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   plot.heatmap(  B.z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  plot.points(ax, B.k, cfg.sigma, B.l)
+  plot.points(ax, B.k, 6, B.l)
   return ax
 
 def plot_diff(B, cfg, ax=None):
@@ -87,7 +86,7 @@ def plot_diff(B, cfg, ax=None):
   D = B.y-B.z; D[0, 1,0] = -1; D[0, 1,1] = 1 
   ax = plot.image(D, ax=ax, cmap='coolwarm')
   plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  plot.points(ax, B.k, cfg.sigma, B.l)
+  plot.points(ax, B.k, 6, B.l)
   return ax
 
 batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy')}) 
@@ -95,7 +94,7 @@ batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy
               *([] if z is None else [z]), *([] if y is None else [y]))]
 
 if DRAFT and not CUDA: 
-  _cfg = obj(sigma=10, maxdist=26, fraction=1, sparsity=1)
+  _cfg = obj(sigma=4, maxdist=26, fraction=1, sparsity=1)
   kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], _cfg)
 
   def plot_grid(grid, **loader_kwargs):
