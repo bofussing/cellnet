@@ -2,8 +2,8 @@
 # # CellNet
 
 # %% # Imports 
-IMAGES = 'one'; AUGS = 'test'
-P = 'sigma'; ps = [4]#[1, 2, 3, 4, 5, 6, 7, 8, 9]
+IMAGES = 'one'; AUGS = 'val'
+P = 'sigma'; ps = [1, 3, 5, 7, 9, 11, 13]
 
 
 import ast
@@ -75,35 +75,38 @@ def mkAugs(mode):
 
 # %% # Plot data 
 
-def plot_overlay(x,m,z,k,l, ax=None, sigma=5):
-  ax = plot.image(x, ax=ax)
-  plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
-  plot.heatmap(  z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  plot.points(ax, k, sigma, l)
+def plot_overlay(B, cfg, ax=None):
+  ax = plot.image(B.x, ax=ax)
+  plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
+  plot.heatmap(  B.z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
+  plot.points(ax, B.k, cfg.sigma, B.l)
   return ax
 
-def plot_diff(x,m,y,z,k,l, ax=None, sigma=5):
+def plot_diff(B, cfg, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
-  D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
+  D = B.y-B.z; D[0, 1,0] = -1; D[0, 1,1] = 1 
   ax = plot.image(D, ax=ax, cmap='coolwarm')
-  plot.heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  plot.points(ax, k, sigma, l)
+  plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
+  plot.points(ax, B.k, cfg.sigma, B.l)
   return ax
 
+batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy')}) 
+              for b in zip(B['image'], B['masks'][0], B['keypoints'], B['class_labels'], 
+              *([] if z is None else [z]), *([] if y is None else [y]))]
 
 if DRAFT and not CUDA: 
-  _cfg = obj(sigma=3.5, maxdist=26, fraction=1, sparsity=1)
-  keypoints2heatmap, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], _cfg)
+  _cfg = obj(sigma=10, maxdist=26, fraction=1, sparsity=1)
+  kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], _cfg)
 
   def plot_grid(grid, **loader_kwargs):
     loader = data.mk_loader([1], cfg=_cfg, bs=prod(grid), **loader_kwargs)
     B = next(iter(loader))
-    B = zip(B['image'], B['masks'][0], keypoints2heatmap(B), B['keypoints'], B['class_labels'])
+    B = batch2cpu(B, z=kp2hm(B))
     for b,ax in zip(B, plot.grid(grid, [CROPSIZE]*2)[1]):
-      plot_overlay(*[cpu(v) for v in b], ax=ax)
+      plot_overlay(b, _cfg, ax=ax)
 
   for B in data.mk_loader([1,2,4], cfg=_cfg, bs=1, transforms=mkAugs('test'), shuffle=False):
-    ax = plot_overlay(*[cpu(v[0]) for v in [B['image'], B['masks'][0], keypoints2heatmap(B), B['keypoints'], B['class_labels']]])
+    ax = plot_overlay(batch2cpu(B, z=kp2hm(B))[0], _cfg)
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
@@ -172,7 +175,7 @@ splits = [([1], [2])] if DRAFT else dict(
 )[IMAGES]
 
 results = pd.DataFrame()
-[os.makedirs(p, exist_ok=True) for p in ('preds', 'plots')]
+if not DRAFT: [os.makedirs(p, exist_ok=True) for p in ('preds', 'plots')]
 for p in [1] if DRAFT else ps:
   for ti, vi in splits:
     cfg = obj(**(dict(
@@ -200,16 +203,21 @@ for p in [1] if DRAFT else ps:
     for ii, t in [(ti, 'T'), (vi, 'V')]:
       for i in ii:
         B = next(iter(data.mk_loader([i], bs=1, transforms=mkAugs('test'), shuffle=False, cfg=cfg)))
-        x,m,z,k,l = [cpu(v[0]) for v in [B['image'], B['masks'][0], kp2hm(B), B['keypoints'], B['class_labels']]]
 
         model.eval()
-        with torch.no_grad(): y = cpu(model(B['image'].to(device)))[0]
+        with torch.no_grad(): y = cpu(model(B['image'].to(device)))
+
+        B = batch2cpu(B, z=kp2hm(B), y=y)[0]
 
         id = f"{P}={p}-{t}{i}"
-        #np.save(f'preds/{id}.npy', y)
-        ax = plot_overlay(x,m,y,k,l, sigma=cfg.sigma); plot.save(ax, f'plots/{id}.pred.png')
-        ax = plot_diff (x,m,y,z,k,l, sigma=cfg.sigma); plot.save(ax, f'plots/{id}.diff.png')
-        if not DRAFT: plt.close('all')
+        ax1 = plot_overlay(B, cfg) 
+        ax2 = plot_diff   (B, cfg)
+
+        if not DRAFT: 
+          #np.save(f'preds/{id}.npy', y)
+          plot.save(ax1, f'plots/{id}.pred.png')
+          plot.save(ax2, f'plots/{id}.diff.png')
+          plt.close('all')
 
     
 # %% # save the results as csv. exclude model column; plot accuracies
