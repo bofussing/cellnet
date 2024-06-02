@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J ipynb
-#SBATCH -t 06:59:00
+#SBATCH -t 08:00:00
 #SBATCH --ntasks=1
 #SBATCH --mem=40G
 #SBATCH --cpus-per-task=8

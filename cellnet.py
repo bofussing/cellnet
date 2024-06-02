@@ -191,9 +191,9 @@ for p in [1] if DRAFT else ps:
     model = mk_model()
     optim = torch.optim.Adam(model.parameters(), lr=5e-3)
     lossf = torch.nn.MSELoss()
-    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=200, gamma=0.1)
+    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=80, gamma=0.1)
 
-    log = train((5 if CUDA else 1) if DRAFT else 501, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
+    log = train((5 if CUDA else 1) if DRAFT else 201, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
     _row =  pd.DataFrame(dict(**{P: [p]}, ti=[ti], vi=[vi], **log.iloc[-1]))
     results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
@@ -212,10 +212,11 @@ for p in [1] if DRAFT else ps:
         ax1 = plot_overlay(B, cfg) 
         ax2 = plot_diff   (B, cfg)
 
-        if not DRAFT: 
+        if vi==[4] and not DRAFT: 
           #np.save(f'preds/{id}.npy', y)
           plot.save(ax1, f'plots/{id}.pred.png')
           plot.save(ax2, f'plots/{id}.diff.png')
+        if not DRAFT:
           plt.close('all')
 
     
