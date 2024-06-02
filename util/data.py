@@ -17,6 +17,11 @@ import albumentations as A
 
 noneor = lambda x, d: x if x is not None else d 
 
+mapd = lambda d,f: {k:f(v) for k,v in d.items()}
+dict2stack = lambda D: np.stack([D[i] for i in sorted(D.keys())], axis=0)
+stack2dict = lambda S, ids: {i:S[idx] for idx,i in enumerate(ids)}
+wrapDictAsStack = lambda f, ids: lambda D: stack2dict(f(dict2stack(D)), ids)
+
 
 def batched(f):
   def inner(B):
@@ -44,7 +49,7 @@ def mk_loader(ids, bs, transforms, cfg, shuffle=True):
 
 
 def mk_XNorm(norm_using_images):
-  X = load_images(norm_using_images)
+  X = dict2stack(load_images(norm_using_images))
   m = list(X.mean(axis=(0,1,2))/255); s = list(X.std(axis=(0,1,2))/255)
   return lambda **kw: A.Normalize(mean=m, std=s, **kw)
 
@@ -53,7 +58,8 @@ def mk_kp2mh_yunnorm(norm_using_images, cfg):
   """Z-score norm improves DNN training according to @lecun2002efficient. BWHC"""
   ds = CellnetDataset(norm_using_images, **cfg.__dict__)
 
-  Y = np.stack([Keypoints2Heatmap(cfg.sigma, ynorm=lambda y:y, labels_to_include=[1])(x.transpose(2,0,1),[m],p,l) for x,m,p,l in zip(ds.X, ds.M, ds.P, ds.L)], axis=0)
+  Y = np.stack([Keypoints2Heatmap(cfg.sigma, ynorm=lambda y:y, labels_to_include=[1])(x.transpose(2,0,1),[m],p,l) 
+                for x,m,p,l in zip(*[v.values() for v in [ds.X, ds.M, ds.P, ds.L]])], axis=0)
   
   ymax = Y.max() 
   ynorm   = lambda y: y/ymax  # norm to (0,1]
@@ -70,18 +76,19 @@ class CellnetDataset(torch.utils.data.Dataset):
                **_junk):
     super().__init__()
     self.batch_size = noneor(batch_size, len(image_ids))
-    self.image_ids=image_ids; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
+    self.ids=image_ids; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
     self.X = load_images(image_ids)  # NOTE albumentations=BHWC 可是 torch=BCHW
     self.P, self.L = load_points(point_annotations_file, image_ids, label2int)
     self.M = mask_sparse(image_ids, self.X, self.P, self.L, maxdist)
 
     if (f:=fraction) < 1.0: 
-      x,y = int(self.X.shape[1]*f), int(self.X.shape[2]*f)
-      self.X = self.X[:,:x,:y,:]
-      self.M = self.M[:,:x,:y,:]
+      _s = self.X[self.ids[0]].shape
+      x,y = int(_s[0]*f), int(_s[1]*f)
+      self.X = mapd(self.X, lambda a: a[:x,:y])
+      self.M = mapd(self.M, lambda a: a[:x,:y])
 
     # filter out all points outside of X
-    for i in range(len(self.X)):
+    for i in self.ids:
       P = []; L = []
       for ((x,y), l) in zip(self.P[i], self.L[i]):
         if  0 <= x < self.X[i].shape[1]\
@@ -90,15 +97,15 @@ class CellnetDataset(torch.utils.data.Dataset):
       self.P[i] = np.array(P); self.L[i] = np.array(L)
 
     if (s:=sparsity) < 1.0:
-      self.P = [p[::int(1/s)] for p in self.P]
-      self.L = [l[::int(1/s)] for l in self.L]
+      self.P = mapd(self.P, lambda a: a[::int(1/s)])
+      self.L = mapd(self.L, lambda a: a[::int(1/s)])
    
   def get(self, n): return getattr(self, n)
   def set(self, n, to): setattr(self, n, to)
 
   def __len__    (self): return max(self.batch_size, len(self.X))
   def __getitem__(self, i): 
-    i = i % len(self.X)
+    i = self.ids[i % len(self.X)]
     return self.transforms(image=self.X[i], masks=[self.M[i]], keypoints=self.P[i], class_labels=self.L[i])
 
   def map(self, f, dim='XY'):
@@ -117,23 +124,22 @@ def Keypoints2Heatmap(sigma, ynorm, labels_to_include=[1]):
   return f
 
 
-def load_images(ids): return np.stack([cv2.cvtColor(cv2.imread(f'data/{i}.jpg'), cv2.COLOR_BGR2RGB) for i in ids], axis=0)
+def load_images(ids): return {i: cv2.cvtColor(cv2.imread(f'data/{i}.jpg'), cv2.COLOR_BGR2RGB) for i in ids}
+
 
 def load_points(path, ids, l2i):
-  P = [[] for _ in ids]; L = [[] for _ in ids]
+  P = {i:[] for i in ids}; L = {i:[] for i in ids}
   for entry in (raw := json.load(open(path))):
     image_id = int(entry['data']['img'].split('/')[-1][9:].split('.')[0])
     if image_id not in ids: continue
-    i = ids.index(image_id)
     for annotation in entry['annotations']:
       for result in annotation['result']:
         x = result['value']['x']/100 * result['original_width']
         y = result['value']['y']/100 * result['original_height']
         l = result['value']['keypointlabels'][0]
-        P[i] += [(x,y)]
-        L[i] += [l2i(l)]
-  return [np.array(ps) for ps in P], [np.array(ls) for ls in L]
-
+        P[image_id] += [(x,y)]
+        L[image_id] += [l2i(l)]
+  return [mapd(v, np.array) for v in (P,L)]
 
 # this function expects a batch dim in P and L
 def onehot(hw, P, L):
@@ -145,13 +151,13 @@ def onehot(hw, P, L):
   return A  # -> BHWC
 
 def mask_sparse(ids, X, P, L, maxdist): 
-  D = onehot(X.shape[1:3], P, L)
+  D = onehot(X[ids[0]].shape[0:2], list(P.values()), list(L.values()))
   D = D.sum(axis=-1)  # all types of points are treated the same => we dont include the points for negative examples but we train on their image parts! :]
   for b in range(len(P)):
     D[b] = distance_transform_edt(1-D[b])
   D = (D > maxdist).reshape(D.shape)
-  B = mk_fgmask(ids, X, thresh=0.01)
-  return 1-(B & D)[:,:,:,None].astype(np.float32)
+  B = dict2stack(mk_fgmask(ids, X, thresh=0.01))
+  return stack2dict(1-(B & D)[:,:,:,None].astype(np.float32), ids)
 
 def mk_fgmask(ids, X, thresh=0.01):
   def create_masks(X):
@@ -180,9 +186,8 @@ def mk_fgmask(ids, X, thresh=0.01):
     return (pred > thresh).reshape(len(X), *X.shape[2:]).astype(np.uint8)
   
   # if data/masks/fgmasks.npy exists, load it, otherwise create it
-  try: return np.stack([np.load(f'.cache/fgmasks/{i}.npy') for i in ids], axis=0)
+  try: return {i: np.load(f'.cache/fgmasks/{i}.npy') for i in ids}
   except FileNotFoundError: 
-    M = create_masks(X)
+    M = wrapDictAsStack(create_masks, ids)(X)
     os.makedirs('.cache/fgmasks', exist_ok=True)
-    for i,m in zip(ids, M): np.save(f'.cache/fgmasks/{i}.npy', m)
-    return M
+    for i in ids: np.save(f'.cache/fgmasks/{i}.npy', M[i])
