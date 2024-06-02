@@ -9,3 +9,5 @@ PLAN
 **/.cache
 
 **/__pycache__
+
+*-GITIGNORE
