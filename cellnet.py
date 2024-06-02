@@ -2,8 +2,8 @@
 # # CellNet
 
 # %% # Imports 
-IMAGES = 'all'; AUGS = 'val'
-P = 'sigma'; ps = [1, 3, 5, 7, 9, 11, 13]
+IMAGES = 'one'; AUGS = 'val'
+P = 'rmbad'; ps = [0.15]
 
 
 import ast
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import torch
+import numpy as np
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -27,7 +28,7 @@ device = torch.device('cuda:0' if CUDA else 'cpu'); print('device =', device)
 DRAFT = False if os.getenv('BATCHED_RUN', '0')=='1' else True; print('DRAFT =', DRAFT)
 
 def gpu(x, device=device): return torch.from_numpy(x).float().to(device)
-def cpu(x): return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else x
+def cpu(x): return x.detach().cpu().numpy() if isinstance(x, torch.Tensor) else np.array(x) if isinstance(x, list) else x
 
 key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
             'ta': 'Training Accuracy', 'va': 'Validation Accuracy', 
@@ -36,6 +37,7 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
             'e' : 'Epoch',             'bs': 'Batch Size',
             'fraction': 'Fraction of Data',  'sparsity': 'Artificial Sparsity',  
             'sigma': 'Gaussian Sigma',        'maxdist': 'Max Distance',
+            'rmbad': 'Prop. of Difficult Labels Removed'
             }
 
 CROPSIZE=256
@@ -72,13 +74,16 @@ def mkAugs(mode):
                *vals])
   )[mode]
 
+batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy')}) 
+              for b in zip(B['image'], B['masks'][0], B['keypoints'], B['class_labels'], 
+              *([] if z is None else [z]), *([] if y is None else [y]))]
 
 # %% # Plot data 
 def plot_overlay(B, cfg, ax=None):
   ax = plot.image(B.x, ax=ax)
   plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   plot.heatmap(  B.z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  plot.points(ax, B.k, 6, B.l)
+  plot.points(ax, B.k, B.l)
   return ax
 
 def plot_diff(B, cfg, ax=None):
@@ -86,12 +91,8 @@ def plot_diff(B, cfg, ax=None):
   D = B.y-B.z; D[0, 1,0] = -1; D[0, 1,1] = 1 
   ax = plot.image(D, ax=ax, cmap='coolwarm')
   plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  plot.points(ax, B.k, 6, B.l)
+  plot.points(ax, B.k, B.l)
   return ax
-
-batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy')}) 
-              for b in zip(B['image'], B['masks'][0], B['keypoints'], B['class_labels'], 
-              *([] if z is None else [z]), *([] if y is None else [y]))]
 
 if DRAFT and not CUDA: 
   _cfg = obj(sigma=4, maxdist=26, fraction=1, sparsity=1)
@@ -128,7 +129,7 @@ mk_model = lambda: smp.Unet(  # NOTE TODO: check if spefically used model automa
 
 def accuracy(y,z): 
   ny, nz = y.sum().item(), z.sum().item()
-  return 1 - (ny - nz) / nz
+  return 1 - (ny - nz) / (nz+1e-9)
 
 def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={}):
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
@@ -167,6 +168,17 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
   plot.train_graph(epochs, log, info=info, key2text=key2text) 
   return log
 
+def loss_per_point(b, lossf, kernel=15):
+  loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
+
+  p2L = np.zeros(len(b.l))
+  for i, (l, (x,y)) in enumerate(zip(b.l, b.k)):
+    xx, yy = np.meshgrid(np.arange(loss.shape[2]), np.arange(loss.shape[1]))
+    kernel = (xx-x)**2 + (yy-y)**2 < kernel**2
+    p2L[i] = (loss * kernel).sum()
+
+  return p2L
+
 
 splits = [([1], [2])] if DRAFT else dict(
   one = [([1], [2,4])],
@@ -175,50 +187,90 @@ splits = [([1], [2])] if DRAFT else dict(
 
 results = pd.DataFrame()
 if not DRAFT: [os.makedirs(p, exist_ok=True) for p in ('preds', 'plots')]
-for p in [1] if DRAFT else ps:
-  for ti, vi in splits:
-    cfg = obj(**(dict(
-      sigma=3.5, 
-      maxdist=26, 
-      fraction=1, 
-      sparsity=1)
-      | {P: p}))
-    loader = lambda ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=cfg)
-    traindl, valdl = loader(ti, AUGS), loader(vi, 'val' if AUGS=='train' else 'test')
-    
-    kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
+def training_run(cfg, traindl, valdl, kp2hm, model=None):
+  global results  
+  ti=traindl.dataset.ids; vi=valdl.dataset.ids
 
-    model = mk_model()
-    optim = torch.optim.Adam(model.parameters(), lr=5e-3)
-    lossf = torch.nn.MSELoss()
-    sched = torch.optim.lr_scheduler.StepLR(optim, step_size=80, gamma=0.1)
+  if model is None: model = mk_model()
+  optim = torch.optim.Adam(model.parameters(), lr=5e-3)
+  lossf = torch.nn.MSELoss()
+  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=cfg.epochs//5*2+1, gamma=0.1)
 
-    log = train((5 if CUDA else 1) if DRAFT else 201, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
+  log = train(cfg.epochs, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
-    _row =  pd.DataFrame(dict(**{P: [p]}, ti=[ti], vi=[vi], **log.iloc[-1]))
-    results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
+  _row =  pd.DataFrame(dict(**{P: [p]}, ti=[ti], vi=[vi], **log.iloc[-1]))
+  results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
 
-    # save predictions to disk
-    for ii, t in [(ti, 'T'), (vi, 'V')]:
-      for i in ii:
-        B = next(iter(data.mk_loader([i], bs=1, transforms=mkAugs('test'), shuffle=False, cfg=cfg)))
+  i2p2L = {}
+  # plot and save predictions to disk
+  for ii, t in [(ti, 'T'), (vi, 'V')]:
+    for i in ii:
+      B = next(iter(data.mk_loader([i], bs=1, transforms=mkAugs('test'), shuffle=False, cfg=cfg)))
 
-        model.eval()
-        with torch.no_grad(): y = cpu(model(B['image'].to(device)))
+      model.eval()
+      with torch.no_grad(): y = cpu(model(B['image'].to(device)))
+      B = batch2cpu(B, z=kp2hm(B), y=y)[0]
 
-        B = batch2cpu(B, z=kp2hm(B), y=y)[0]
+      if cfg.rmbad != 0: # get the badly predicted points and plot them
+        i2p2L[i] = loss_per_point(B, lossf, kernel=15)
+        rm = np.argsort(-i2p2L[i])[:int(len(B.l)*cfg.rmbad)]
 
-        id = f"{P}={p}-{t}{i}"
+      if vi==[4]:  # plot
         ax1 = plot_overlay(B, cfg) 
         ax2 = plot_diff   (B, cfg)
 
-        if vi==[4] and not DRAFT: 
+        if cfg.rmbad != 0: 
+          [plot.points(a, B.k[rm], B.l[rm], 15, color='#444400', lw=3)
+            for a in (ax1, ax2)]
+
+        if not DRAFT :  # save but don't show
           #np.save(f'preds/{id}.npy', y)
-          plot.save(ax1, f'plots/{id}.pred.png')
+          plot.save(ax1, f'plots/{id := f"{P}={p}-{t}{i}"}.pred.png')
           plot.save(ax2, f'plots/{id}.diff.png')
         if not DRAFT:
           plt.close('all')
 
+  return dict(model=model, log=log, i2p2L=i2p2L)
+
+
+cfg_base = obj(
+  epochs=(5 if CUDA else 1) if DRAFT else 501,
+  sigma=3.5, 
+  maxdist=26, 
+  fraction=1, 
+  sparsity=1,
+  rmbad=0
+)
+
+if P not in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
+
+
+for p in [1] if DRAFT else ps:
+  cfg = obj(**(cfg_base.__dict__ | {P: p}))
+  if P in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
+
+  for ti, vi in splits:
+    cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
+
+    loader = lambda c, ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=c)
+    traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
+
+    out = training_run(cfg, traindl, valdl, kp2hm)
+
+    if cfg.rmbad != 0:
+      keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in out['i2p2L'].items()}
+
+      cfg = obj(**(cfg.__dict__ | dict(epochs=cfg.epochs//2+1, rmbad=0.1)))
+
+      traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
+      # remove the hard to predict annotations
+      for ds in [traindl.dataset, valdl.dataset]:
+        ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
+        ds.L = {i: ds.L[i][keep[i]] for i in ds.L}
+
+      
+      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model'])
+      
     
 # %% # save the results as csv. exclude model column; plot accuracies
 
