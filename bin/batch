@@ -21,8 +21,8 @@ mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT"
 
 if [ -z "$SLURM_JOBID" ]; then
   export SLURM_JOBID=local-$(date +%y%m%d-%H%M%S)
-  bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" 2>&1 "_____________$SLURM_JOBID-RUNNING"
+  bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$TAG" 2>&1 "_____________$SLURM_JOBID-RUNNING"
   mv "_____________$SLURM_JOBID-RUNNING" "$OUTDIR/local.log"
 else 
-  sbatch bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR"
+  sbatch bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$TAG"
 fi

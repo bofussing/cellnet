@@ -11,14 +11,14 @@
 #SBATCH -o _____________%j-RUNNING
 
 
-NAME="$1"; INDIR="$2"; INPUT="$3"; OUTDIR="$4"
+NAME="$1"; INDIR="$2"; INPUT="$3"; OUTDIR="$4"; TAG="$5"
 
 if [ "$INDIR" =  "" ]; then INDIR="."; fi
 if [ "$INDIR" = "." ]
 then ENV="$NAME" 
 else ENV="$(basename "$INDIR")"; fi
 
-echo -e "  ===  RUNNING $INDIR/$NAME at $(date) ===  "
+echo -e "  ===  RUNNING $INDIR/$NAME ($TAG) at $(date) ===  "
 
 nvidia-smi
 
@@ -43,6 +43,7 @@ if [ -f "$OUTDIR/$NAME.ipynb" ]; then rm "$INPUT"; fi
 find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" ! -wholename "$INPUT" -delete
 find "$OUTDIR" -name '*.pyc' -delete
 find "$OUTDIR" -depth -type d -empty -delete
+rm -rf "$OUTDIR/.cache"
 rm "$TIMESTAMPFILE"
 
 mv "_____________$SLURM_JOBID-RUNNING" "$OUTDIR/$SLURM_JOBID-$RUNTIME.log"

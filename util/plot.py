@@ -75,18 +75,23 @@ def save(ax, path, transparent=False):
   ax.figure.savefig(path, transparent=transparent, pil_kwargs=dict(compress_level=9))
 
 
-def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, **unknown):
+def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accuracy=True, **unknown):
   if clear: clear_output(wait=True)
   log['lr'] /= log['lr'].max()    
 
-  _, (ax1, ax2) = plt.subplots(2,1, figsize=(10,15))
-  ax1.set_title(f"Training Loss\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
-  
+  _, axs = plt.subplots(_r := 2 if accuracy else 1,1, figsize=(10,7.5*_r))
+  if not accuracy: axs = [axs]
+
+  for ax, T in zip(axs, ['Loss', 'Accuracy']):
+    ax.set_title(f"Training {T}]\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
+
   for key in (log if keys is None else keys):
-    ax = ax1 if key in "lr tl vl".split(' ') else ax2
+    if key in "lr tl vl".split(' '): ax = axs[0]
+    elif not accuracy: continue
+    else: ax = axs[1]
     ax.plot(log[key], label=key2text[key] if key2text else key)
 
-  for ax in (ax1, ax2):
+  for ax in axs:
     ax.set_yscale('log')
     ax.legend(loc='upper right')
   plt.show()
