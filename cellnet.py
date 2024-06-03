@@ -2,7 +2,8 @@
 # # CellNet
 
 # %% # Imports 
-IMAGES = 'one'; AUGS = 'val'
+IMAGES = 'all'; AUGS = 'val'
+#P = 'sigma'; ps = [3,.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
 P = 'rmbad'; ps = [0.15]
 
 
@@ -79,10 +80,10 @@ batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy
               *([] if z is None else [z]), *([] if y is None else [y]))]
 
 # %% # Plot data 
-def plot_overlay(B, cfg, ax=None):
+def plot_overlay(B, cfg, ax=None, heat='z'):
   ax = plot.image(B.x, ax=ax)
   plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
-  plot.heatmap(  B.z, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
+  plot.heatmap(  B.__dict__[heat], ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
   plot.points(ax, B.k, B.l)
   return ax
 
@@ -129,7 +130,7 @@ mk_model = lambda: smp.Unet(  # NOTE TODO: check if spefically used model automa
 
 def accuracy(y,z): 
   ny, nz = y.sum().item(), z.sum().item()
-  return 1 - (ny - nz) / (nz+1e-9)
+  return 1 - abs(ny - nz) / (nz+1e-9)
 
 def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={}):
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
@@ -165,7 +166,7 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
         L['vl'], L['va'] = epoch(valdl, train=False) 
 
     if DRAFT: plot.train_graph(e, log, info=info, key2text=key2text, clear=True)
-  plot.train_graph(epochs, log, info=info, key2text=key2text) 
+  plot.train_graph(epochs, log, info=info, key2text=key2text, accuracy=False) 
   return log
 
 def loss_per_point(b, lossf, kernel=15):
@@ -194,7 +195,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
   if model is None: model = mk_model()
   optim = torch.optim.Adam(model.parameters(), lr=5e-3)
   lossf = torch.nn.MSELoss()
-  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=cfg.epochs//5*2+1, gamma=0.1)
+  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=int(cfg.epochs/cfg.lr_steps)+1, gamma=cfg.lr_gamma)
 
   log = train(cfg.epochs, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
@@ -213,19 +214,20 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
       if cfg.rmbad != 0: # get the badly predicted points and plot them
         i2p2L[i] = loss_per_point(B, lossf, kernel=15)
-        rm = np.argsort(-i2p2L[i])[:int(len(B.l)*cfg.rmbad)]
 
       if vi==[4]:  # plot
-        ax1 = plot_overlay(B, cfg) 
+        ax1 = plot_overlay(B, cfg, heat='y') 
         ax2 = plot_diff   (B, cfg)
 
         if cfg.rmbad != 0: 
+          rm = np.argsort(-i2p2L[i])[:int(len(B.l)*cfg.rmbad)]
           [plot.points(a, B.k[rm], B.l[rm], 15, color='#444400', lw=3)
             for a in (ax1, ax2)]
 
         if not DRAFT :  # save but don't show
+          id = f"{P}={p}-{t}{i}"
           #np.save(f'preds/{id}.npy', y)
-          plot.save(ax1, f'plots/{id := f"{P}={p}-{t}{i}"}.pred.png')
+          plot.save(ax1, f'plots/{id}.pred.png')
           plot.save(ax2, f'plots/{id}.diff.png')
         if not DRAFT:
           plt.close('all')
@@ -234,12 +236,14 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
 
 cfg_base = obj(
-  epochs=(5 if CUDA else 1) if DRAFT else 501,
-  sigma=3.5, 
+  epochs=(5 if CUDA else 1) if DRAFT else 101,
+  sigma=3.5,  # NOTE: put optimal sigma here
   maxdist=26, 
   fraction=1, 
   sparsity=1,
-  rmbad=0
+  lr_steps=1.25,
+  lr_gamma=0.1,
+  rmbad=0,
 )
 
 if P not in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
@@ -255,7 +259,7 @@ for p in [1] if DRAFT else ps:
     loader = lambda c, ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=c)
     traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
 
-    out = training_run(cfg, traindl, valdl, kp2hm)
+    out = training_run(cfg, traindl, valdl, kp2hm) # type: ignore
 
     if cfg.rmbad != 0:
       keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in out['i2p2L'].items()}
@@ -265,11 +269,12 @@ for p in [1] if DRAFT else ps:
       traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
       # remove the hard to predict annotations
       for ds in [traindl.dataset, valdl.dataset]:
-        ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
-        ds.L = {i: ds.L[i][keep[i]] for i in ds.L}
-
+        ds.P = {i: ds.P[i][keep[i]] for i in ds.P} # type: ignore
+        ds.L = {i: ds.L[i][keep[i]] for i in ds.L} # type: ignore
+        ds._generate_masks(fraction=1, sparsity=1) # type: ignore 
+        # regenerate masks, but don't throw away more data
       
-      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model'])
+      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model']) # type: ignore
       
     
 # %% # save the results as csv. exclude model column; plot accuracies
@@ -279,4 +284,4 @@ if not DRAFT:
   R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
   plot.regplot(R, P, key2text)
 
-results
+results # type: ignore

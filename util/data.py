@@ -76,10 +76,16 @@ class CellnetDataset(torch.utils.data.Dataset):
                **_junk):
     super().__init__()
     self.batch_size = noneor(batch_size, len(image_ids))
+    self.maxdist=maxdist; self.fraction=fraction; self.sparsity=sparsity
     self.ids=image_ids; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
     self.X = load_images(image_ids)  # NOTE albumentations=BHWC 可是 torch=BCHW
     self.P, self.L = load_points(point_annotations_file, image_ids, label2int)
-    self.M = mask_sparse(image_ids, self.X, self.P, self.L, maxdist)
+    
+    self._generate_masks(fraction=self.fraction, sparsity=self.sparsity)
+
+  def _generate_masks(self, fraction=1.0, sparsity=1.0):
+    assert fraction>0 and sparsity>0, "fraction and sparsity must be positive (0,1]"
+    self.M = mask_sparse(self.ids, self.X, self.P, self.L, self.maxdist)
 
     if (f:=fraction) < 1.0: 
       _s = self.X[self.ids[0]].shape
@@ -191,3 +197,4 @@ def mk_fgmask(ids, X, thresh=0.01):
     M = wrapDictAsStack(create_masks, ids)(X)
     os.makedirs('.cache/fgmasks', exist_ok=True)
     for i in ids: np.save(f'.cache/fgmasks/{i}.npy', M[i])
+    return M
