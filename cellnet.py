@@ -43,6 +43,18 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
 
 CROPSIZE=256
 
+
+cfg_base = obj(
+  epochs=(5 if CUDA else 1) if DRAFT else 101,
+  sigma=5.0,  # NOTE: do grid search again later when better convergence 
+  maxdist=26, 
+  fraction=1, 
+  sparsity=1,
+  lr_steps=1.25,
+  lr_gamma=0.1,
+  rmbad=0,
+)
+
 # %% # Load Data
 XNorm = data.mk_XNorm([1,2,4])
 
@@ -84,7 +96,7 @@ def plot_overlay(B, cfg, ax=None, heat='z'):
   ax = plot.image(B.x, ax=ax)
   plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   plot.heatmap(  B.__dict__[heat], ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  plot.points(ax, B.k, B.l)
+  plot.points(ax, B.k, B.l, cfg.sigma*2)
   return ax
 
 def plot_diff(B, cfg, ax=None):
@@ -92,22 +104,21 @@ def plot_diff(B, cfg, ax=None):
   D = B.y-B.z; D[0, 1,0] = -1; D[0, 1,1] = 1 
   ax = plot.image(D, ax=ax, cmap='coolwarm')
   plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  plot.points(ax, B.k, B.l)
+  plot.points(ax, B.k, B.l, cfg.sigma*2)
   return ax
 
 if DRAFT and not CUDA: 
-  _cfg = obj(sigma=4, maxdist=26, fraction=1, sparsity=1)
-  kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], _cfg)
+  kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
 
   def plot_grid(grid, **loader_kwargs):
-    loader = data.mk_loader([1], cfg=_cfg, bs=prod(grid), **loader_kwargs)
+    loader = data.mk_loader([1], cfg=cfg_base, bs=prod(grid), **loader_kwargs)
     B = next(iter(loader))
     B = batch2cpu(B, z=kp2hm(B))
     for b,ax in zip(B, plot.grid(grid, [CROPSIZE]*2)[1]):
-      plot_overlay(b, _cfg, ax=ax)
+      plot_overlay(b, cfg_base, ax=ax)
 
-  for B in data.mk_loader([1,2,4], cfg=_cfg, bs=1, transforms=mkAugs('test'), shuffle=False):
-    ax = plot_overlay(batch2cpu(B, z=kp2hm(B))[0], _cfg)
+  for B in data.mk_loader([1,2,4], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False):
+    ax = plot_overlay(batch2cpu(B, z=kp2hm(B))[0], cfg_base)
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
@@ -169,11 +180,12 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
   plot.train_graph(epochs, log, info=info, key2text=key2text, accuracy=False) 
   return log
 
-def loss_per_point(b, lossf, kernel=15):
+def loss_per_point(b, lossf, kernel=15, exclude=[]):
   loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
 
   p2L = np.zeros(len(b.l))
   for i, (l, (x,y)) in enumerate(zip(b.l, b.k)):
+    if l in exclude: continue  # NOTE thats an ugly HACK that prevents us from getting the loss for the negative annotations
     xx, yy = np.meshgrid(np.arange(loss.shape[2]), np.arange(loss.shape[1]))
     kernel = (xx-x)**2 + (yy-y)**2 < kernel**2
     p2L[i] = (loss * kernel).sum()
@@ -187,9 +199,11 @@ splits = [([1], [2])] if DRAFT else dict(
 )[IMAGES]
 
 results = pd.DataFrame()
-if not DRAFT: [os.makedirs(p, exist_ok=True) for p in ('preds', 'plots')]
+if not DRAFT: [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
+
 def training_run(cfg, traindl, valdl, kp2hm, model=None):
   global results  
+  p = cfg.__dict__[P]
   ti=traindl.dataset.ids; vi=valdl.dataset.ids
 
   if model is None: model = mk_model()
@@ -200,6 +214,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
   log = train(cfg.epochs, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
   _row =  pd.DataFrame(dict(**{P: [p]}, ti=[ti], vi=[vi], **log.iloc[-1]))
+  print('DEBUG _row:', _row) 
   results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
 
   i2p2L = {}
@@ -213,15 +228,18 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
       B = batch2cpu(B, z=kp2hm(B), y=y)[0]
 
       if cfg.rmbad != 0: # get the badly predicted points and plot them
-        i2p2L[i] = loss_per_point(B, lossf, kernel=15)
+        p2L = loss_per_point(B, lossf, kernel=15, exclude=[2])
+        if i in vi: 
+          i2p2L[i] = p2L  # only save the losses for the validation image 
+          print(f'DEBUG: saved losses for val image {i} (should happen only once per cfg and image)')
 
       if vi==[4] and (i in (1,4)):  # plot T1 and V4 for all [1,2]|[4] runs
         ax1 = plot_overlay(B, cfg, heat='y') 
         ax2 = plot_diff   (B, cfg)
 
         if cfg.rmbad != 0: 
-          rm = np.argsort(-i2p2L[i])[:int(len(B.l)*cfg.rmbad)]
-          [plot.points(a, B.k[rm], B.l[rm], 15, color='#444400', lw=3)
+          rm = np.argsort(-p2L[i])[:int(len(B.l)*cfg.rmbad)]  # type: ignore
+          [plot.points(a, B.k[rm], B.l[rm], color='#00ff00', lw=3)
             for a in (ax1, ax2)]
 
         if not DRAFT :  # save but don't show
@@ -235,47 +253,38 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
   return dict(model=model, log=log, i2p2L=i2p2L)
 
 
-cfg_base = obj(
-  epochs=(5 if CUDA else 1) if DRAFT else 101,
-  sigma=3.5,  # NOTE: put optimal sigma here
-  maxdist=26, 
-  fraction=1, 
-  sparsity=1,
-  lr_steps=1.25,
-  lr_gamma=0.1,
-  rmbad=0,
-)
+def main():
+  if P not in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
 
-if P not in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
+  for p in [ps[-1]] if DRAFT else ps:
+    cfg = obj(**(cfg_base.__dict__ | {P: p}))
+    if P in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
 
+    for ti, vi in splits:
+      cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
 
-for p in [ps[-1]] if DRAFT else ps:
-  cfg = obj(**(cfg_base.__dict__ | {P: p}))
-  if P in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
-
-  for ti, vi in splits:
-    cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
-
-    loader = lambda c, ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=c)
-    traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
-
-    out = training_run(cfg, traindl, valdl, kp2hm) # type: ignore
-
-    if cfg.rmbad != 0:
-      keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in out['i2p2L'].items()}
-
-      cfg = obj(**(cfg.__dict__ | dict(epochs=cfg.epochs//2+1, rmbad=0.1)))
-
+      loader = lambda c, ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=c)
       traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
-      # remove the hard to predict annotations
-      for ds in [traindl.dataset, valdl.dataset]:
-        ds.P = {i: ds.P[i][keep[i]] for i in ds.P} # type: ignore
-        ds.L = {i: ds.L[i][keep[i]] for i in ds.L} # type: ignore
-        ds._generate_masks(fraction=1, sparsity=1) # type: ignore 
-        # regenerate masks, but don't throw away more data
-      
-      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model']) # type: ignore
-      
+
+      out = training_run(cfg, traindl, valdl, kp2hm) # type: ignore
+
+      if cfg.rmbad != 0:
+        keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in out['i2p2L'].items()}
+        print(f"DEBUG: keeping {len(keep[vi[0]])} of {len(out['i2p2L'][vi[0]])} points for {vi[0]}")
+
+        cfg = obj(**(cfg.__dict__ | dict(epochs=cfg.epochs//2+1, rmbad=0.1)))
+
+        traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
+        # remove the hard to predict annotations (only '1')
+        for ds in [traindl.dataset, valdl.dataset]:
+          ds.P = {i: ds.P[i][keep[i]] for i in ds.P} # type: ignore
+          ds.L = {i: ds.L[i][keep[i]] for i in ds.L} # type: ignore
+          ds._generate_masks(fraction=1, sparsity=1) # type: ignore 
+          # regenerate masks, but don't throw away more data
+        
+        out = training_run(cfg, traindl, valdl, kp2hm, model=out['model']) # type: ignore
+
+main()
     
 # %% # save the results as csv. exclude model column; plot accuracies
 
