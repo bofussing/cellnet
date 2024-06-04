@@ -215,7 +215,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
       if cfg.rmbad != 0: # get the badly predicted points and plot them
         i2p2L[i] = loss_per_point(B, lossf, kernel=15)
 
-      if vi==[4]:  # plot
+      if vi==[4] and (i in (1,4)):  # plot T1 and V4 for all [1,2]|[4] runs
         ax1 = plot_overlay(B, cfg, heat='y') 
         ax2 = plot_diff   (B, cfg)
 
@@ -249,7 +249,7 @@ cfg_base = obj(
 if P not in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
 
 
-for p in [1] if DRAFT else ps:
+for p in [ps[-1]] if DRAFT else ps:
   cfg = obj(**(cfg_base.__dict__ | {P: p}))
   if P in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
 
