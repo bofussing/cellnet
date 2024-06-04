@@ -83,7 +83,7 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
   if not accuracy: axs = [axs]
 
   for ax, T in zip(axs, ['Loss', 'Accuracy']):
-    ax.set_title(f"Training {T}]\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
+    ax.set_title(f"Training {T}\n{', '.join([f'{key2text[k]}: {v}' for k,v in [('e', epochs), *info.items()]])}")
 
   for key in (log if keys is None else keys):
     if key in "lr tl vl".split(' '): ax = axs[0]
