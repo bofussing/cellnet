@@ -71,6 +71,22 @@ def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
   return ax
 
 
+def overlay(x, y=None, m=None, k=None, l=None, sigma=4, ax=None):
+  ax = image(x, ax=ax)
+  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
+  if y is not None: heatmap(y, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
+  if k is not None and l is not None: points(ax, k, l, sigma*2)
+  return ax
+
+def diff(y, z, m=None, k=None, l=None, sigma=4, ax=None):
+  title = f"Difference between Target and Predicted Heatmap"
+  D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
+  ax = image(D, ax=ax, cmap='coolwarm')
+  if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
+  if k is not None and l is not None: points(ax, k, l, sigma*2)
+  return ax
+
+
 def save(ax, path, transparent=False):
   ax.figure.savefig(path, transparent=transparent, pil_kwargs=dict(compress_level=9))
 

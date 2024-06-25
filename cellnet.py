@@ -5,20 +5,22 @@
 IMAGES = 'all'; AUGS = 'val'
 #P = 'sigma'; ps = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
 P = 'rmbad'; ps = [0.15]
+RELEASE = True
 
 
-import ast
-from math import prod
 import matplotlib.pyplot as plt
 import pandas as pd
-import os
 import torch
 import numpy as np
 
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 
+import os
+import ast
+from math import prod
 from types import SimpleNamespace as obj
+import json
 
 import util.data as data
 import util.plot as plot
@@ -45,18 +47,18 @@ CROPSIZE=256
 
 
 cfg_base = obj(
-  epochs=(5 if CUDA else 1) if DRAFT else 101,
+  epochs=(5 if CUDA else 1) if DRAFT else 101 if not RELEASE else 501,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   maxdist=26, 
   fraction=1, 
   sparsity=1,
-  lr_steps=1.25,
+  lr_steps=1.25 if not RELEASE else 3.5,
   lr_gamma=0.1,
   rmbad=0,
 )
 
 # %% # Load Data
-XNorm = data.mk_XNorm([1,2,4])
+XNorm, _xmean, _xstd = data.mk_XNorm([1,2,4])
 
 def mkAugs(mode):
   T = lambda ts:  A.Compose(transforms=[
@@ -92,21 +94,6 @@ batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy
               *([] if z is None else [z]), *([] if y is None else [y]))]
 
 # %% # Plot data 
-def plot_overlay(B, cfg, ax=None, heat='z'):
-  ax = plot.image(B.x, ax=ax)
-  plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
-  plot.heatmap(  B.__dict__[heat], ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  plot.points(ax, B.k, B.l, cfg.sigma*2)
-  return ax
-
-def plot_diff(B, cfg, ax=None):
-  title = f"Difference between Target and Predicted Heatmap"
-  D = B.y-B.z; D[0, 1,0] = -1; D[0, 1,1] = 1 
-  ax = plot.image(D, ax=ax, cmap='coolwarm')
-  plot.heatmap(1-B.m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  plot.points(ax, B.k, B.l, cfg.sigma*2)
-  return ax
-
 if DRAFT and not CUDA: 
   kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
 
@@ -115,13 +102,15 @@ if DRAFT and not CUDA:
     B = next(iter(loader))
     B = batch2cpu(B, z=kp2hm(B))
     for b,ax in zip(B, plot.grid(grid, [CROPSIZE]*2)[1]):
-      plot_overlay(b, cfg_base, ax=ax)
-
-  for B in data.mk_loader([1,2,4], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False):
-    ax = plot_overlay(batch2cpu(B, z=kp2hm(B))[0], cfg_base)
+      plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg_base.sigma, ax=ax)
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
+
+  for B in data.mk_loader([1,2,4], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False):
+    b = batch2cpu(B, z=kp2hm(B))[0]
+    ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg_base.sigma)
+ 
 
 # %% # Create model 
 import segmentation_models_pytorch as smp
@@ -193,10 +182,11 @@ def loss_per_point(b, lossf, kernel=15, exclude=[]):
   return p2L
 
 
-splits = [([1], [2])] if DRAFT else dict(
-  one = [([1], [2,4])],
-  all = [([2,4], [1]), ([1,4], [2]), ([1,2], [4])],
-)[IMAGES]
+splits = [([1], [2])] if DRAFT else\
+         [([1,2,4], [])] if RELEASE else\
+         [([1], [2,4])] if IMAGES=='one' else\
+         [([2,4], [1]), ([1,4], [2]), ([1,2], [4])] if IMAGES=='all' else\
+         []
 
 results = pd.DataFrame()
 if not DRAFT: [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
@@ -214,7 +204,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
   log = train(cfg.epochs, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
   _row =  pd.DataFrame(dict(**{P: [p]}, ti=[ti], vi=[vi], **log.iloc[-1]))
-  print('DEBUG _row:', _row) 
+  print('DEBUG _row:'); print(_row) 
   results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
 
   i2p2L = {}
@@ -225,21 +215,22 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
       model.eval()
       with torch.no_grad(): y = cpu(model(B['image'].to(device)))
-      B = batch2cpu(B, z=kp2hm(B), y=y)[0]
+      b = batch2cpu(B, z=kp2hm(B), y=y)[0]
+      del B
 
       if cfg.rmbad != 0: # get the badly predicted points and plot them
-        p2L = loss_per_point(B, lossf, kernel=15, exclude=[2])
-        if i in vi: 
+        p2L = loss_per_point(b, lossf, kernel=15, exclude=[2])
+        if RELEASE or i in vi: 
           i2p2L[i] = p2L  # only save the losses for the validation image 
           print(f'DEBUG: saved losses for val image {i} (should happen only once per cfg and image)')
 
       if vi==[4] and (i in (1,4)):  # plot T1 and V4 for all [1,2]|[4] runs
-        ax1 = plot_overlay(B, cfg, heat='y') 
-        ax2 = plot_diff   (B, cfg)
+        ax1 = plot.overlay(b.x, b.y, b.m, b.k, b.l, cfg.sigma) 
+        ax2 = plot.diff   (b.y, b.z, b.m, b.k, b.l, cfg.sigma)
 
         if cfg.rmbad != 0: 
           rm = np.argsort(-p2L[i])[:int(len(B.l)*cfg.rmbad)]  # type: ignore
-          [plot.points(a, B.k[rm], B.l[rm], color='#00ff00', lw=3)
+          [plot.points(a, b.k[rm], b.l[rm], color='#00ff00', lw=3)
             for a in (ax1, ax2)]
 
         if not DRAFT :  # save but don't show
@@ -253,39 +244,63 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
   return dict(model=model, log=log, i2p2L=i2p2L)
 
 
-def main():
-  if P not in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
+loader = lambda c, ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=c)
+if P not in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg_base)
 
-  for p in [ps[-1]] if DRAFT else ps:
-    cfg = obj(**(cfg_base.__dict__ | {P: p}))
-    if P in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
+for p in [ps[-1]] if DRAFT else ps:
+  cfg = obj(**(cfg_base.__dict__ | {P: p}))
+  if P in ['sigma']: kp2hm, yunnorm = data.mk_kp2mh_yunnorm([1,2,4], cfg)
+
+  i2p2L = {}
+
+  for ti, vi in splits:
+    cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
+
+    traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
+
+    out = training_run(cfg, traindl, valdl, kp2hm) # type: ignore
+    i2p2L |= out['i2p2L'] # NOTE: TODO better merge with avg instead of override if image is part of multiple validation sets # type: ignore
+    # NOTE TODO: the bad points are currently only removed during training with splits and not in release mode
+    # -> first confirm with Stuart which points are bad and then remove them in release mode
+
+  # if rmbad is set, remove the bad points and retrain
+  if cfg.rmbad != 0:
+    keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in out['i2p2L'].items()} # type: ignore
+    for _i, k in keep.items(): 
+      print(f"DEBUG: keeping {len(k)} of {len(out['i2p2L'][_i])} points for {_i}") # type: ignore
 
     for ti, vi in splits:
-      cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
+      cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi, epochs=cfg.epochs//2+1, rmbad=0.1)))
 
-      loader = lambda c, ids, mode: data.mk_loader(ids, bs=1 if mode=='test' else 16, transforms=mkAugs(mode), shuffle=False, cfg=c)
       traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
+      # remove the hard to predict annotations (only '1')
+      for ds in [traindl.dataset, valdl.dataset]:  # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a compley refactor
+        ds.P = {i: ds.P[i][keep[i]] for i in ds.P} # type: ignore
+        ds.L = {i: ds.L[i][keep[i]] for i in ds.L} # type: ignore
+        ds._generate_masks(fraction=1, sparsity=1) # type: ignore 
+        # regenerate masks, but don't throw away more data
+      
+      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model']) # type: ignore
+  
+# %%
+if RELEASE: # save model to disk
+  B = next(iter(data.mk_loader([1], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False)))
+  x = batch2cpu(B)[0].x[None]
+  
+  m = out['model'].to('cpu')
+  m.eval()
 
-      out = training_run(cfg, traindl, valdl, kp2hm) # type: ignore
+  # save a test prediction to make sure the model works the same
+  np.save('.cache/export_test_x_1.npy', x)
+  np.save('.cache/export_test_y_1.npy', cpu(m(gpu(x))))
 
-      if cfg.rmbad != 0:
-        keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in out['i2p2L'].items()}
-        print(f"DEBUG: keeping {len(keep[vi[0]])} of {len(out['i2p2L'][vi[0]])} points for {vi[0]}")
+  m.save_pretrained('./model')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
+  os.remove('model/README.md')
 
-        cfg = obj(**(cfg.__dict__ | dict(epochs=cfg.epochs//2+1, rmbad=0.1)))
+  # save the model settings
+  with open('model/pipeline.json', 'w') as f: json.dump(dict(xmean = _xmean, xstd = _xstd,), f, indent=2)
 
-        traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, 'val' if AUGS=='train' else 'test')
-        # remove the hard to predict annotations (only '1')
-        for ds in [traindl.dataset, valdl.dataset]:
-          ds.P = {i: ds.P[i][keep[i]] for i in ds.P} # type: ignore
-          ds.L = {i: ds.L[i][keep[i]] for i in ds.L} # type: ignore
-          ds._generate_masks(fraction=1, sparsity=1) # type: ignore 
-          # regenerate masks, but don't throw away more data
-        
-        out = training_run(cfg, traindl, valdl, kp2hm, model=out['model']) # type: ignore
 
-main()
-    
 # %% # save the results as csv. exclude model column; plot accuracies
 
 if not DRAFT:
@@ -293,4 +308,4 @@ if not DRAFT:
   R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
   plot.regplot(R, P, key2text)
 
-results # type: ignore
+results

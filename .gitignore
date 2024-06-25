@@ -1,13 +1,7 @@
+*GITIGNORE
+
 .git
-_thesis
-figures
-COMMIT 
-PLAN
 .vscode
-
-*-RUNNING
+*RUNNING
 **/.cache
-
 **/__pycache__
-
-*-GITIGNORE
