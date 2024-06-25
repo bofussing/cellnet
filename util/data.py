@@ -51,7 +51,7 @@ def mk_loader(ids, bs, transforms, cfg, shuffle=True):
 def mk_XNorm(norm_using_images):
   X = dict2stack(load_images(norm_using_images))
   m = list(X.mean(axis=(0,1,2))/255); s = list(X.std(axis=(0,1,2))/255)
-  return lambda **kw: A.Normalize(mean=m, std=s, **kw)
+  return (lambda **kw: A.Normalize(mean=m, std=s, **kw)), m, s
 
 
 def mk_kp2mh_yunnorm(norm_using_images, cfg):
