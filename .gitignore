@@ -1,1 +1,10 @@
 *GITIGNORE
+
+.git
+.vscode
+*RUNNING
+**/.cache
+**/__pycache__
+
+model_export*
+release.zip

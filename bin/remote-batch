@@ -1,0 +1,6 @@
+#!/bin/bash
+
+source bin/init_shell.sh
+
+ssh -t "$HPC_HOST" "cd cellnet && bin/batch $@"
+ssh -t "$HPC_HOST" "watch -n 1 squeue -u $HPC_USER"
