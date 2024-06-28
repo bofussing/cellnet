@@ -4,7 +4,7 @@
 # %% # Imports 
 IMAGES = 'all'; AUGS = 'val'
 #P = 'sigma'; ps = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
-P = 'rmbad'; ps = [0.15]
+P = 'sigma'; ps = [5.0]
 RELEASE = True
 
 
@@ -294,11 +294,11 @@ if RELEASE: # save model to disk
   np.save('.cache/export_test_x_1.npy', x)
   np.save('.cache/export_test_y_1.npy', cpu(m(gpu(x))))
 
-  m.save_pretrained('./model')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
-  os.remove('model/README.md')
+  m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
+  os.remove('model_export/README.md')
 
   # save the model settings
-  with open('model/pipeline.json', 'w') as f: json.dump(dict(xmean = _xmean, xstd = _xstd,), f, indent=2)
+  with open('model_export/pipeline.json', 'w') as f: json.dump(dict(xmean = _xmean, xstd = _xstd,), f, indent=2)
 
 
 # %% # save the results as csv. exclude model column; plot accuracies

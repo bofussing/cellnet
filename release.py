@@ -17,7 +17,7 @@ if PLOT:
 
 # %% 
 
-model_settings = json.load(open('model/pipeline.json'))
+model_settings = json.load(open('model_export/pipeline.json'))
 
 
 def load_images(ids, mean, std, max_pixel_value=255.0): 
@@ -32,7 +32,7 @@ if PLOT:
 
 # %% 
 
-model = smp.Unet.from_pretrained('./model')
+model = smp.Unet.from_pretrained('./model_export')
 model.eval()  # important
 
 # %% 
