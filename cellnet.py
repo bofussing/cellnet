@@ -183,7 +183,7 @@ def loss_per_point(b, lossf, kernel=15, exclude=[]):
 
 
 splits = [([1], [2])] if DRAFT else\
-         [([1,2,4], [])] if RELEASE else\
+         [([1,2,4], [1])] if RELEASE else\
          [([1], [2,4])] if IMAGES=='one' else\
          [([2,4], [1]), ([1,4], [2]), ([1,2], [4])] if IMAGES=='all' else\
          []

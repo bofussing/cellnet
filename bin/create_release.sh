@@ -1,7 +1,6 @@
 #!/bin/bash
 
-# if on hpc 
-
+if [ -f release.zip ]; then rm release.zip; fi
 
 path="$1"
 version="$2"
@@ -19,4 +18,4 @@ zip -u release.zip release.py
 printf "@ release.yml\n@=environment.yml\n" | zipnote -w release.zip
 printf "@ release.py\n@=main.py\n" | zipnote -w release.zip
 
-gh release create -n --target draft "$version" "release.zip"
+gh release create --target draft "$version" "release.zip" -t "$version" -n "" 
