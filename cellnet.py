@@ -287,7 +287,7 @@ if RELEASE: # save model to disk
   B = next(iter(data.mk_loader([1], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False)))
   x = batch2cpu(B)[0].x[None]
   
-  m = out['model'].to('cpu')
+  m = out['model']
   m.eval()
 
   # save a test prediction to make sure the model works the same
@@ -305,7 +305,8 @@ if RELEASE: # save model to disk
 
 if not DRAFT:
   results.to_csv('results.csv', index=False, sep=';')
-  R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
-  plot.regplot(R, P, key2text)
+  if not RELEASE:
+    R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
+    plot.regplot(R, P, key2text)
 
 results

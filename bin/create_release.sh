@@ -11,7 +11,11 @@ if [ -z "$path" ] || [ -z "$version" ]; then
     exit 1
 fi
 
-zip -r release.zip "$path/model_export"
+if [ -d model_export ]; then rm -rf model_export; fi
+cp -r "$path/model_export" model_export
+
+zip -r release.zip "model_export"
+rm -rf "model_export"
 zip -u release.zip release.yml
 zip -u release.zip release.py
 
