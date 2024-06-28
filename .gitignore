@@ -5,6 +5,10 @@
 *RUNNING
 **/.cache
 **/__pycache__
+results
 
 model_export*
 release.zip
+model.zip
+
+data
