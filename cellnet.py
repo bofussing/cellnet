@@ -40,7 +40,7 @@ CROPSIZE=256
 
 
 cfg_base = obj(
-  epochs=5#(5 if CUDA else 1) if DRAFT else 101 if not RELEASE else 351,
+  epochs=5,#(5 if CUDA else 1) if DRAFT else 101 if not RELEASE else 351,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   maxdist=26, 
   fraction=1, 
@@ -221,7 +221,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
         ax3 = None
 
         if cfg.rmbad != 0: 
-          rm = np.argsort(-p2L[i])[:int(len(b.l)*cfg.rmbad)]
+          rm = np.argsort(-p2L[i])[:int(len(b.l)*cfg.rmbad)]  # type: ignore
           ax3 = plot.image(b.x); plot.points(ax3, b.k, b.l)
           for a in (ax1, ax2, ax3):
             plot.points(a, b.k[rm], b.l[rm], colormap='#00ff00', lw=3)
@@ -274,7 +274,8 @@ for p in [ps[-1]] if DRAFT else ps:
         # regenerate masks, but don't throw away more data (f,s=1)
         # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a compley refactor
       
-      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model'])
+      out = training_run(cfg, traindl, valdl, kp2hm, 
+                         model=out['model'])  # type: ignore
   
 # %%
 if RELEASE: # save model to disk
