@@ -198,9 +198,10 @@ def mk_fgmask(ids, X, thresh=0.01):
     return (pred > thresh).reshape(len(X), *X.shape[2:]).astype(np.uint8)
   
   # if data/masks/fgmasks.npy exists, load it, otherwise create it
-  try: return {i: np.load(f'.cache/fgmasks/{i}.npy') for i in ids}
+  cachedir = os.path.expanduser('~/.cache/cellnet')
+  try: return {i: np.load(f'{cachedir}/fgmasks/{i}.npy') for i in ids}
   except FileNotFoundError: 
     M = wrapDictAsStack(create_masks, ids)(X)
-    os.makedirs('.cache/fgmasks', exist_ok=True)
-    for i in ids: np.save(f'.cache/fgmasks/{i}.npy', M[i])
+    os.makedirs(f'{cachedir}/fgmasks', exist_ok=True)
+    for i in ids: np.save(f'{cachedir}/fgmasks/{i}.npy', M[i])
     return M

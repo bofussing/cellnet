@@ -285,13 +285,14 @@ if RELEASE: # save model to disk
   m.eval()
 
   # save a test in/out
-  np.save('.cache/export_test_x_1.npy', x)
-  np.save('.cache/export_test_y_1.npy', cpu(m(gpu(x, device=device))))
+  #os.makedirs(cachedir:=os.path.expanduser('~/.cache/cellnet'), exist_ok=True)
+  np.save('./model_export_test_x_1.npy', x)
+  np.save('./model_export_test_y_1.npy', cpu(m(gpu(x, device=device))))
 
   m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
-  os.remove('model_export/README.md')
+  os.remove('./model_export/README.md')
 
-  with open('model_export/pipeline.json', 'w') as f: json.dump(dict(xmean=_xmean, xstd=_xstd, ymax=float(_ymax)), f, indent=2)
+  with open('./model_export/pipeline.json', 'w') as f: json.dump(dict(xmean=_xmean, xstd=_xstd, ymax=float(_ymax)), f, indent=2)
 
 
 # %% # save the results as csv. exclude model column; plot accuracies

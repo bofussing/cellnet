@@ -1,4 +1,3 @@
-from pyexpat import model
 import torch
 import segmentation_models_pytorch as smp
 
@@ -56,7 +55,7 @@ def init_model(version:str='latest', keep_download_cache=True):
 
 def load_image(path, pipline_settings): 
   mean, std = [np.array(pipline_settings[k], dtype=np.float32)  * 255   for k in ('xmean', 'xstd')]
-  return ((cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB).astype(np.float32) - mean) / std).transpose(2, 0, 1)[:,:256,:256]
+  return ((cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB).astype(np.float32) - mean) / std).transpose(2, 0, 1)#[:,:256,:256]
   # NOTE: these casts are weird but important. can probably do them more reasonably 
 
 def count(image_paths, model=None):
