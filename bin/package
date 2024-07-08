@@ -1,0 +1,4 @@
+#!/bin/bash
+
+pip install .
+rm -rf build dist *.egg-info
