@@ -158,6 +158,18 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
   plot.train_graph(epochs, log, info=info, key2text=key2text, accuracy=False) 
   return log
 
+# time the function and print its duration
+import time
+def timeit(f):
+  def timed(*args, **kw):
+    ts = time.time()
+    result = f(*args, **kw)
+    te = time.time()
+    print(f'{f.__name__} took {te-ts} seconds')
+    return result
+  return timed
+
+@timeit
 def loss_per_point(b, lossf, kernel=15, exclude=[]):
   loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
   p2L = np.zeros(len(b.l))
@@ -166,12 +178,13 @@ def loss_per_point(b, lossf, kernel=15, exclude=[]):
     xx, yy = np.meshgrid(np.arange(loss.shape[2]), np.arange(loss.shape[1]))
     kernel = (xx-x)**2 + (yy-y)**2 < kernel**2
     p2L[i] = (loss * kernel).sum()
+    print(f'point {i} loss = {p2L[i]}')
 
   return p2L
 
 
 splits = [([1], [2])] if DRAFT else\
-         [([1,2,4], [1])] if RELEASE else\
+         [([1,2,4], [])] if RELEASE else\
          [([1], [2,4])] if IMAGES=='one' else\
          [([2,4], [1]), ([1,4], [2]), ([1,2], [4])] if IMAGES=='all' else\
          []
@@ -182,7 +195,8 @@ if not DRAFT: [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
 def training_run(cfg, traindl, valdl, kp2hm, model=None):
   global results  
   p = cfg.__dict__[P]
-  ti,vi = [dl.dataset.ids for dl in (traindl, valdl)]
+  ti = traindl.dataset.ids 
+  vi = valdl.dataset.ids if valdl else []
 
   if model is None: model = mk_model()
   optim = torch.optim.Adam(model.parameters(), lr=5e-3)
@@ -212,8 +226,8 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
         if RELEASE or i in vi: 
           i2p2L[i] = p2L  # only save the losses for the validation image 
 
-          np.save(f'p2L-{i}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
-          print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
+        np.save(f'p2L-{i}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
+        print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
 
       if (RELEASE or vi==[4]) and (i in (1,4)):  # plot T1 and V4 for all [1,2]|[4] runs
         ax1 = plot.overlay(b.x, b.y, b.m, b.k, b.l, cfg.sigma) 
@@ -252,7 +266,7 @@ for p in [ps[-1]] if DRAFT else ps:
   for ti, vi in splits:
     cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
 
-    traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_')
+    traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_') if vi else None
 
     out = training_run(cfg, traindl, valdl, kp2hm)
     i2p2L |= out['i2p2L'] # NOTE: overrides if image in multiple val sets
@@ -265,7 +279,7 @@ for p in [ps[-1]] if DRAFT else ps:
     for ti, vi in splits:
       cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi, epochs=cfg.epochs//2+1, rmbad=0.1)))
 
-      traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_')
+      traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_') if vi else None
       for dl in [traindl, valdl]: 
         ds: CellnetDataset = dl.dataset # type: ignore
         ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
