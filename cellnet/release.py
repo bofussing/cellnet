@@ -1,7 +1,7 @@
 import torch
 import segmentation_models_pytorch as smp
 
-import cv2
+from PIL import Image
 import numpy as np
 
 import json
@@ -35,40 +35,44 @@ def init_model(version:str='latest', keep_download_cache=True):
   cache = os.path.expanduser('~/.cache/cellnet')
   modeldir = f'{cache}/model_export'
   versionfile = f'{modeldir}/version.json'
-  if version == 'latest': version = get_latest_release()
 
-  prexisting_version = json.load(open(versionfile))['version'] if os.path.isfile(versionfile) else None
-  if prexisting_version != version:
-    # TODO checksum of model.zip
-    download(f'https://github.com/beijn/cellnet/releases/download/{version}/model.zip', f'{cache}/model-{version}.zip', overwrite=True)   
-    if os.path.isdir(modeldir): shutil.rmtree(modeldir)
-    with zipfile.ZipFile(f'{cache}/model-{version}.zip', 'r') as zip_ref:
-      zip_ref.extractall(cache)
-    if not keep_download_cache: os.remove(f'{cache}/model-{version}.zip')
+  # if the version is None, we just use whatever is cached or redownload the latest if it's not cached
+  if not (version == None and os.path.isdir(modeldir)): 
+    if version == 'latest': version = get_latest_release()
 
-    with open(versionfile, 'w') as f: json.dump({'version': version}, f)
+    prexisting_version = json.load(open(versionfile))['version'] if os.path.isfile(versionfile) else None
+    if prexisting_version != version:
+      # TODO checksum of model.zip
+      download(f'https://github.com/beijn/cellnet/releases/download/{version}/model.zip', f'{cache}/model-{version}.zip', overwrite=True)   
+      if os.path.isdir(modeldir): shutil.rmtree(modeldir)
+      with zipfile.ZipFile(f'{cache}/model-{version}.zip', 'r') as zip_ref:
+        zip_ref.extractall(cache)
+      if not keep_download_cache: os.remove(f'{cache}/model-{version}.zip')
+
+      with open(versionfile, 'w') as f: json.dump({'version': version}, f)
 
   pipeline_settings = json.load(open(f'{modeldir}/pipeline.json'))
   model = smp.Unet.from_pretrained(f'{modeldir}')
   setattr(model, 'pipline_settings', pipeline_settings)
+  setattr(model, 'version', version)
   return model
 
-def load_image(path, pipline_settings): 
+def load_image(image_file_descriptor, pipline_settings):
   mean, std = [np.array(pipline_settings[k], dtype=np.float32)  * 255   for k in ('xmean', 'xstd')]
-  return ((cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2RGB).astype(np.float32) - mean) / std).transpose(2, 0, 1)#[:,:256,:256]
-  # NOTE: these casts are weird but important. can probably do them more reasonably 
+  return ((np.array(Image.open(image_file_descriptor)) - mean) / std).transpose(2, 0, 1)
 
-def count(image_paths, model=None):
+def count(images, model=None):
   if model is None or type(model) == str:  
     model = init_model('latest' if model is None else model)
   model.eval()  # important
 
   counts = {}
-  for path in image_paths:
-    X = load_image(path, model.pipline_settings)[None]
+  for image in images:
+    X = load_image(image, model.pipline_settings)[None]
     Y = model(torch.tensor(X).float()).detach().cpu().numpy()
 
-    counts[path] = np.sum(Y)*model.pipline_settings["ymax"]
+    counts[image.name] = np.sum(Y)*model.pipline_settings["ymax"]
+
   return counts
 
 
@@ -78,7 +82,12 @@ if __name__ == '__main__':
   folder = sys.argv[1]
   image_paths = [f"{folder}/{f}" for f in os.listdir(folder) if f.endswith('.jpg')]
 
-  model = init_model('v0.0.2')
-  counts = count(image_paths, model)
+  model = init_model()
+
+  counts = {}
+  for path in image_paths: 
+    with open(path, 'rb') as f:
+      counts |= count([f], model)
+
   print(counts)
   json.dump(counts, open('counts.json', 'w'), indent=2, sort_keys=True)

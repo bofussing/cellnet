@@ -17,8 +17,8 @@ import albumentations as A; from albumentations.pytorch import ToTensorV2
 import os, ast, json
 from types import SimpleNamespace as obj
 
-from util.data import *
-import util.plot as plot
+from cellnet.data import *
+import cellnet.plot as plot
 
 
 CUDA = torch.cuda.is_available()

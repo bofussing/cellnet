@@ -4,7 +4,11 @@
 .vscode
 *RUNNING
 **/.cache
+
 **/__pycache__
+build 
+*egg-info
+dist
 
 model_export*
 release.zip
