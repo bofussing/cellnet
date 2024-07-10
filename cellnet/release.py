@@ -31,13 +31,14 @@ def download(url, filename, overwrite=False):
   
 
 # TODO: restrict to compatible versions?
-def init_model(version:str='latest', keep_download_cache=True):
+def init_model(version:str='latest', keep_download_cache=True, overwrite_location=None):
   cache = os.path.expanduser('~/.cache/cellnet')
   modeldir = f'{cache}/model_export'
+  if overwrite_location: modeldir = overwrite_location
   versionfile = f'{modeldir}/version.json'
 
   # if the version is None, we just use whatever is cached or redownload the latest if it's not cached
-  if not (version == None and os.path.isdir(modeldir)): 
+  if not (overwrite_location or (version == None and os.path.isdir(modeldir))): 
     if version == 'latest': version = get_latest_release()
 
     prexisting_version = json.load(open(versionfile))['version'] if os.path.isfile(versionfile) else None
