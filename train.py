@@ -40,7 +40,7 @@ CROPSIZE=256
 
 
 cfg_base = obj(
-  epochs=5,#(5 if CUDA else 1) if DRAFT else 101 if not RELEASE else 351,
+  epochs=(5 if CUDA else 1) if DRAFT else 101 if not RELEASE else 351,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   maxdist=26, 
   fraction=1, 
@@ -142,17 +142,16 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
     return l/(b+1), a/(b+1)
 
   for e in range(epochs):
-    L = log.loc[e]
-    L['lr'] = optim.param_groups[0]['lr']
+    log.loc[e,'lr'] = optim.param_groups[0]['lr']
   
     model.train()
-    L['tl'], L['ta'] = epoch(traindl, train=True)
+    log.loc[e,'tl'], log.loc[e,'ta'] = epoch(traindl, train=True)
     sched.step() 
   
     if valdl is not None: 
       model.eval()
       with torch.no_grad():
-        L['vl'], L['va'] = epoch(valdl, train=False) 
+        log.loc[e,'vl'], log.loc[e,'va'] = epoch(valdl, train=False) 
 
     if DRAFT: plot.train_graph(e, log, info=info, key2text=key2text, clear=True)
   plot.train_graph(epochs, log, info=info, key2text=key2text, accuracy=False) 
@@ -176,9 +175,8 @@ def loss_per_point(b, lossf, kernel=15, exclude=[]):
   for i, (l, (x,y)) in enumerate(zip(b.l, b.k)):
     #if l in exclude: continue  # NOTE hack to exclude losses for negative annotations (TODO reevaluate why)
     xx, yy = np.meshgrid(np.arange(loss.shape[2]), np.arange(loss.shape[1]))
-    kernel = (xx-x)**2 + (yy-y)**2 < kernel**2
-    p2L[i] = (loss * kernel).sum()
-    print(f'point {i} loss = {p2L[i]}')
+    k = (xx-x)**2 + (yy-y)**2 < kernel**2
+    p2L[i] = (loss * k).sum()
 
   return p2L
 
@@ -235,7 +233,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
         ax3 = None
 
         if cfg.rmbad != 0: 
-          rm = np.argsort(-p2L[i])[:int(len(b.l)*cfg.rmbad)]  # type: ignore
+          rm = np.argsort(-i2p2L[i])[:int(len(b.l)*cfg.rmbad)]  # type: ignore
           ax3 = plot.image(b.x); plot.points(ax3, b.k, b.l)
           for a in (ax1, ax2, ax3):
             plot.points(a, b.k[rm], b.l[rm], colormap='#00ff00', lw=3)
@@ -249,7 +247,6 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
           if ax3 is not None: plot.save(ax3, f'plots/{id}.points.png')
           plt.close('all') # save but don't show
 
-  print(i2p2L)
   return dict(model=model, log=log, i2p2L=i2p2L)
 
 
@@ -280,7 +277,8 @@ for p in [ps[-1]] if DRAFT else ps:
       cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi, epochs=cfg.epochs//2+1, rmbad=0.1)))
 
       traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_') if vi else None
-      for dl in [traindl, valdl]: 
+
+      def regen_masks(dl):
         ds: CellnetDataset = dl.dataset # type: ignore
         ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
         ds.L = {i: ds.L[i][keep[i]] for i in ds.L}
@@ -288,6 +286,9 @@ for p in [ps[-1]] if DRAFT else ps:
         # regenerate masks, but don't throw away more data (f,s=1)
         # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a compley refactor
       
+      regen_masks(traindl)
+      if valdl: regen_masks(valdl)
+
       out = training_run(cfg, traindl, valdl, kp2hm, 
                          model=out['model'])  # type: ignore
   
@@ -314,7 +315,9 @@ if RELEASE: # save model to disk
 
 if not DRAFT:
   results.to_csv('results.csv', index=False, sep=';')
-  R = pd.read_csv('results.csv', sep=';', converters=dict(ti=ast.literal_eval, vi=ast.literal_eval)).rename(columns=dict(vi=key2text['vi']))
+  R = results.copy()
+  R['vi'] = R['ti']; R['vl'] = R['tl']; R['va'] = R['ta']   # HACK because in RELEASE vi=[]
+  R.rename(columns=dict(vi=key2text['vi']), inplace=True)
   plot.regplot(R, P, key2text)
 
 results # type: ignore
