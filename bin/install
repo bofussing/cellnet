@@ -1,4 +1,4 @@
 #!/bin/bash
 
-pip install .
+pip install -e .  # NOTE editable 
 rm -rf build dist *.egg-info
