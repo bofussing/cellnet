@@ -3,7 +3,13 @@
 if [ -f release.zip ]; then rm release.zip; fi
 
 path="$1"
-version="$2"
+modeltag="$2"
+
+# read model api version from cellnet/__init__.py
+modelapi=$(grep -oP "__model_api_version__ = '\K[^']+" cellnet/__init__.py)
+version="$modelapi-$(date +%y%m%d)"
+if [ -n "$modeltag" ]; then version="$version-$modeltag"; fi
+
 
 # if either path or version are empty
 if [ -z "$path" ] || [ -z "$version" ]; then
@@ -16,10 +22,5 @@ cp -r "$path/model_export" model_export
 
 zip -r model.zip "model_export"
 rm -rf "model_export"
-#zip -u release.zip release.yml
-#zip -u release.zip release.py
 
-#printf "@ release.yml\n@=environment.yml\n" | zipnote -w release.zip
-#printf "@ release.py\n@=main.py\n" | zipnote -w release.zip
-
-gh release create --target main "$version" "model.zip" -t "$version" -n ""  --latest
+gh release create --target draft "$version" "model.zip" -t "$version" -n ""  --latest
