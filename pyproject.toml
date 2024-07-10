@@ -1,26 +1,30 @@
 [build-system]
-requires = ["setuptools>=40.9.0", "wheel"]
+requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "cellnet"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Localizing Cells in Phase-Contrast Microscopy Images using Sparse and Noisy Center-Point Annotations"
 authors = [{name = "Benjamin Eckhardt", email = "benjamin.eckhardt@stud.uni-goettingen.de"}]
 readme = "README.md"
-requires-python = "==3.12.4"
+requires-python = "~=3.12"
 urls.repository = "https://github.com/beijn/cellnet"
 classifiers = [
     "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-
 
 dependencies = [
     "numpy<2.0.0",
     "Pillow",
     "segmentation-models-pytorch@git+https://github.com/qubvel/segmentation_models.pytorch#egg=bd7f877fec51309a1a7de7670aed232954450037",
 ]
+
+
+[tool.setuptools.dynamic]
+version = {attr = "cellnet.__version__"}
 
 [tool.setuptools]
 packages = ["cellnet"]

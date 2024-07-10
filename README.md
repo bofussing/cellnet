@@ -23,3 +23,9 @@ counts = count(<[image_file_descriptors]>, model)
 - `'latest'`: will download the latest model 
 - `None`: will use what ever is already in the cache or default to `'latest'`
 - any other string will download that version from [releases](https://github.com/beijn/cellnet/releases) 
+
+## Trouble Shooting
+
+### Can't automatically determine latest model version due to Github API rate limiting
+- provide a manual version string to `init_model(<version>)`
+- or provide a `GITHUB_TOKEN` environment variable with a GH PAT with scope Content: read
