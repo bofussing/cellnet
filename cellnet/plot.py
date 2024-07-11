@@ -31,7 +31,7 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   return image(out, ax=ax)
 
 
-def points(ax, points, labels=None, radius=8, colormap={1: 'black', 2: '#7700ff'}, marker='o', **scatter_args):
+def points(ax, points, labels=None, radius=8.0, colormap={1: 'black', 2: '#7700ff'}, marker='o', **scatter_args):
   """"[(x,y), ...]"""
   s = np.pi*radius**2*10000 if marker == 'o' else 10000*radius**2
   if 'lw' in scatter_args: scatter_args['lw']*=100
@@ -71,14 +71,14 @@ def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
   return ax
 
 
-def overlay(x, y=None, m=None, k=None, l=None, sigma=4, ax=None):
+def overlay(x, y=None, m=None, k=None, l=None, sigma=4.0, ax=None):
   ax = image(x, ax=ax)
   if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   if y is not None: heatmap(y, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
   if k is not None and l is not None: points(ax, k, l, sigma*2)
   return ax
 
-def diff(y, z, m=None, k=None, l=None, sigma=4, ax=None):
+def diff(y, z, m=None, k=None, l=None, sigma=4.0, ax=None):
   title = f"Difference between Target and Predicted Heatmap"
   D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
   ax = image(D, ax=ax, cmap='coolwarm')

@@ -118,10 +118,17 @@ def mk_loader(ids, bs, transforms, cfg, shuffle=True):
     batch_size=bs, shuffle=shuffle, collate_fn=collate, pin_memory=True, num_workers=8) # TODO: figure out and fix error and change back #8 if torch.cuda.is_available() else 2)
 
 
-def mk_XNorm(norm_using_images):
-  X = dict2stack(load_images(norm_using_images))
-  m = list(X.mean(axis=(0,1,2))/255); s = list(X.std(axis=(0,1,2))/255)
-  return (lambda **kw: A.Normalize(mean=m, std=s, **kw)), m, s
+def mk_XNorm(cfg):
+  type = 'standard' if cfg.xnorm_type=='imagenet' else cfg.xnorm_type
+  if type=='standard':
+    X = dict2stack(load_images(cfg.annotated_images))
+    params = dict(
+      mean = list(X.mean(axis=(0,1,2))/255),
+      std  = list(X.std (axis=(0,1,2))/255),
+    )
+  else: params = {}
+
+  return (lambda **kw: A.Normalize(normalization=type, **params, **kw)), params
 
 
 def mk_kp2mh_yunnorm(norm_using_images, cfg):

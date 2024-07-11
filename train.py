@@ -2,7 +2,7 @@
 # # CellNet
 
 # %% # Imports 
-IMAGES = 'all'; AUGS = 'val'
+AUGS = 'train'
 #P = 'sigma'; ps = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
 P = 'rmbad'; ps = [0.15]
 RELEASE = True
@@ -14,7 +14,7 @@ import numpy as np, pandas as pd
 
 import albumentations as A; from albumentations.pytorch import ToTensorV2
 
-import os, ast, json
+import os, json
 from types import SimpleNamespace as obj
 
 from cellnet.data import *
@@ -38,6 +38,11 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
 
 CROPSIZE=256  
 
+annotated_images = np.array(['data/1.jpg', 'data/2.jpg', 'data/4.jpg']); i=annotated_images
+data_splits = [(i[[0]],  i[[1]])] if DRAFT else\
+                  [(i, i)] if RELEASE else\
+                  [(i[[1,2]], i[[0]]), (i[[0,2]], i[[1]]), (i[[0,1]], i[[2]])] # crossval
+
 
 cfg_base = obj(
   epochs=(5 if CUDA else 1) if DRAFT else 101 if not RELEASE else 351,
@@ -48,10 +53,20 @@ cfg_base = obj(
   lr_steps=1.25 if not RELEASE else 2.5,
   lr_gamma=0.1,
   rmbad=0,
+  xnorm_type='image_per_channel',
+  xnorm_params={},
+  annotated_images=annotated_images,
+  data_splits=data_splits,
+  augs=AUGS,
+  device=device,
+  cropsize=CROPSIZE,
+  draft=DRAFT,
+  **{P: ps[-1]}
 )
 
 # %% # Load Data
-XNorm, _xmean, _xstd = mk_XNorm([1,2,4])
+
+XNorm, cfg_base.xnorm_params = mk_XNorm(cfg_base)
 
 
 def mkAugs(mode):
@@ -72,12 +87,13 @@ def mkAugs(mode):
     val   = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
                *vals]),
     train = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
-               # A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
-               A.Rotate(),
-               A.AdvancedBlur(),
-               A.Equalize(),
-               A.ColorJitter(), 
-               A.GaussNoise(),
+               #A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
+               #A.Rotate(),
+               #A.AdvancedBlur(),
+               #A.Equalize(),
+               #A.ColorJitter(), 
+               #A.GaussNoise(),
+               A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25),
                *vals])
   )[mode]
 
@@ -181,12 +197,6 @@ def loss_per_point(b, lossf, kernel=15, exclude=[]):
   return p2L
 
 
-splits = [([1], [2])] if DRAFT else\
-         [([1,2,4], [])] if RELEASE else\
-         [([1], [2,4])] if IMAGES=='one' else\
-         [([2,4], [1]), ([1,4], [2]), ([1,2], [4])] if IMAGES=='all' else\
-         []
-
 results = pd.DataFrame()
 if not DRAFT: [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
 
@@ -260,7 +270,7 @@ for p in [ps[-1]] if DRAFT else ps:
 
   i2p2L = {}
 
-  for ti, vi in splits:
+  for ti, vi in data_splits:
     cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
 
     traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_') if vi else None
@@ -273,7 +283,7 @@ for p in [ps[-1]] if DRAFT else ps:
     
     for _i, k in keep.items(): print(f"DEBUG: keeping {len(k)} of {len(i2p2L[_i])} points for {_i}")
 
-    for ti, vi in splits:
+    for ti, vi in data_splits:
       cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi, epochs=cfg.epochs//2+1, rmbad=0.1)))
 
       traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_') if vi else None
@@ -308,7 +318,7 @@ if RELEASE: # save model to disk
   m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
   os.remove('./model_export/README.md')
 
-  with open('./model_export/pipeline.json', 'w') as f: json.dump(dict(xmean=_xmean, xstd=_xstd, ymax=float(_ymax)), f, indent=2)
+  with open('./model_export/settings.json', 'w') as f: json.dump({'ymax':float(_ymax), **cfg_base.__dict__}, f, indent=2)
 
 
 # %% # save the results as csv. exclude model column; plot accuracies
