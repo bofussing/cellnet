@@ -1,9 +1,6 @@
-from collections import defaultdict
 import matplotlib.pyplot as plt
-from IPython.display import clear_output
 import numpy as np
 import itertools as it
-import seaborn as sns
 
 # this code assumes HWC
 
@@ -92,7 +89,9 @@ def save(ax, path, transparent=False):
 
 
 def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accuracy=True, **unknown):
-  if clear: clear_output(wait=True)
+  if clear: 
+    from IPython.display import clear_output
+    clear_output(wait=True)
   log['lr'] /= log['lr'].max()    
 
   _, axs = plt.subplots(_r := 2 if accuracy else 1,1, figsize=(10,7.5*_r))
@@ -114,6 +113,7 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
 
 
 def regplot(R, dim, key2text):
+  import seaborn as sns
   vi=key2text['vi']
   
   fig, axs = plt.subplots(2,2, figsize=(15,10))
