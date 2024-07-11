@@ -4,7 +4,8 @@
 # %% # Imports 
 AUGS = 'train'
 #P = 'sigma'; ps = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
-P = 'rmbad'; ps = [0.15]
+#P = 'rmbad'; ps = [0.15]
+P = 'bright_aug'; ps = 'True'
 RELEASE = True
 
 
@@ -68,7 +69,6 @@ cfg_base = obj(
 
 XNorm, cfg_base.xnorm_params = mk_XNorm(cfg_base)
 
-
 def mkAugs(mode):
   T = lambda ts:  A.Compose(transforms=[
     A.PadIfNeeded(CROPSIZE, CROPSIZE, border_mode=0, value=0),
@@ -100,11 +100,11 @@ def mkAugs(mode):
 
 # %% # Plot data 
 if DRAFT and not CUDA: 
-  kp2hm, yunnorm, _ = mk_kp2mh_yunnorm([1,2,4], cfg_base)
+  kp2hm, yunnorm, _ = mk_kp2mh_yunnorm(cfg_base)
 
   from math import prod
   def plot_grid(grid, **loader_kwargs):
-    loader = mk_loader([1], cfg=cfg_base, bs=prod(grid), **loader_kwargs)
+    loader = mk_loader(cfg_base.annotated_images[[0]], cfg=cfg_base, bs=prod(grid), **loader_kwargs)
     B = next(iter(loader))
     B = batch2cpu(B, z=kp2hm(B))
     for b,ax in zip(B, plot.grid(grid, [CROPSIZE]*2)[1]):
@@ -113,7 +113,7 @@ if DRAFT and not CUDA:
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
 
-  for B in mk_loader([1,2,4], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False):
+  for B in mk_loader(image_paths='all', cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False):
     b = batch2cpu(B, z=kp2hm(B))[0]
     ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg_base.sigma)
  
@@ -203,8 +203,7 @@ if not DRAFT: [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
 def training_run(cfg, traindl, valdl, kp2hm, model=None):
   global results  
   p = cfg.__dict__[P]
-  ti = traindl.dataset.ids 
-  vi = valdl.dataset.ids if valdl else []
+  ti = cfg.ti; vi = cfg.vi
 
   if model is None: model = mk_model()
   optim = torch.optim.Adam(model.parameters(), lr=5e-3)
@@ -234,10 +233,10 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
         if RELEASE or i in vi: 
           i2p2L[i] = p2L  # only save the losses for the validation image 
 
-        np.save(f'p2L-{i}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
+        np.save(f'p2L-{imgid(i)}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
         print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
 
-      if (RELEASE or vi==[4]) and (i in (1,4)):  # plot T1 and V4 for all [1,2]|[4] runs
+      if (RELEASE or [imgid(_v) for _v in vi]==['4']) and (imgid(i) in ('1','4')):  # plot T1 and V4 for all [1,2]|[4] runs
         ax1 = plot.overlay(b.x, b.y, b.m, b.k, b.l, cfg.sigma) 
         ax2 = plot.diff   (b.y, b.z, b.m, b.k, b.l, cfg.sigma)
         ax3 = None
@@ -250,7 +249,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
            
 
         if not DRAFT: 
-          id = f"{P}={p}-{t}{i}"
+          id = f"{P}={p}-{t}{imgid(i)}"
           #np.save(f'preds/{id}.npy', y)
           plot.save(ax1, f'plots/{id}.pred.png')
           plot.save(ax2, f'plots/{id}.diff.png')
@@ -262,11 +261,11 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
 loader = lambda c, ids, mode: mk_loader(ids, bs=1 if mode=='test' else 16, shuffle=False, cfg=c,
     transforms=mkAugs(('val' if AUGS=='train' else 'test') if mode=='_val_' else mode)) 
-kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm([1,2,4], cfg_base)
+kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg_base)
 
 for p in [ps[-1]] if DRAFT else ps:
   cfg = obj(**(cfg_base.__dict__ | {P: p}))
-  if P in ['sigma']: kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm([1,2,4], cfg)
+  if P in ['sigma']: kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg)
 
   i2p2L = {}
 

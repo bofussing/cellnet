@@ -20,7 +20,7 @@ def get_latest_compatible_model_version():
   try: versions = GH.get_all_releases()
   except Exception as e: sys.exit(print(f'Could not get the latest release from GH API. Please specify manually in init_model(<version>). See available versions at https://github.com/beijn/cellnet/releases.\n\n{e}'))
 
-  compatible_versions = [v for v in versions if v.split('.')[0]==cellnet.__model_api_version__]
+  compatible_versions = [v for v in versions if v.split('-')[0]==cellnet.__model_api_version__]
   if not compatible_versions: sys.exit(print(f"No compatible model (model api version {cellnet.__model_api_version__}) found at https://github.com/beijn/cellnet/releases. \nPlease specify manually in init_model(<version>). \nFound incompatible versions: {versions}"))
 
   return compatible_versions[0]
@@ -29,8 +29,7 @@ def get_latest_compatible_model_version():
 # TODO: restrict to compatible versions?
 def init_model(version:str|None='latest', keep_download_cache=True):
   cache = os.path.expanduser('~/.cache/cellnet')
-  modeldir = version if type(version) is str and os.path.isdir(version) \
-        else f'{cache}/model_export'
+  modeldir = version if type(version) is str and os.path.isdir(version) else f'{cache}/model_export'
   versionfile = f'{modeldir}/version.json'
 
   # if the version is None, we just use whatever is cached or redownload the latest if it's not cached
@@ -53,14 +52,14 @@ def init_model(version:str|None='latest', keep_download_cache=True):
   model = smp.Unet.from_pretrained(f'{modeldir}')
   setattr(model, 'settings', settings)
   setattr(model, 'version', version)
-  print('Model loaded version:', version)
+  print('Model version:', version)
   return model.to(DEVICE)
 
 def load_image(image_file_descriptor, model_settings):
   X = np.array(Image.open(image_file_descriptor))
-  match model_settings.xnorm_type:
+  match model_settings['xnorm_type']:
     case 'imagenet': 
-      m, s = [np.array(model_settings.xnorm_params[k], dtype=np.float32)  * 255   for k in ('xmean', 'xstd')]
+      m, s = [np.array(model_settings['xnorm_params'][k], dtype=np.float32)  * 255   for k in ('mean', 'std')]
       return ((X - m) / s).transpose(2, 0, 1)
     case 'image_per_channel':  
       m, s = X.mean(axis=(0,1)), X.std(axis=(0,1))
