@@ -1,0 +1,18 @@
+#!/bin/bash
+
+testimage=${1:-data/1.jpg}
+
+conda="micromamba"
+$conda shell init --shell=bash                     >/dev/null
+eval "$($conda shell hook --shell=bash)"           >/dev/null 
+
+$conda activate cellnet_release
+pip uninstall -y cellnet
+rm -rf ~/.cache/cellnet/model-*.zip
+rm -rf ~/.cache/cellnet/model_export
+cd ~/cellnet
+#git switch main
+#git pull
+bin/install
+python cellnet/release.py "$testimage" latest
+echo "PLEASE check if counts are correct before pushing. (Remember to choose the correct branch.)"

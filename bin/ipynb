@@ -11,14 +11,15 @@
 #SBATCH -o _____________%j-RUNNING
 
 
-NAME="$1"; INDIR="$2"; INPUT="$3"; OUTDIR="$4"; TAG="$5"
+NAME="$1"; INDIR="$2"; INPUT="$3"; OUTDIR="$4"; EXPERIMENT="$5"; RELEASE_MODE="$6"
 
 if [ "$INDIR" =  "" ]; then INDIR="."; fi
-if [ "$INDIR" = "." ]
-then ENV="$NAME" 
-else ENV="$(basename "$INDIR")"; fi
+#if [ "$INDIR" = "." ]
+#then ENV="$NAME" 
+#else ENV="$(basename "$INDIR")"; fi
+ENV=cellnet
 
-echo -e "  ===  RUNNING $INDIR/$NAME ($TAG) at $(date) ===  "
+echo -e "  ===  RUNNING $INDIR/$NAME ($EXPERIMENT) at $(date) ===  "
 
 nvidia-smi
 
@@ -32,7 +33,8 @@ TIMESTAMPFILE="$OUTDIR/TIMESTAMP"
 touch "$TIMESTAMPFILE"
 SECONDS=0
 
-export BATCHED_RUN=1
+export EXPERIMENT="$EXPERIMENT"
+export RELEASE_MODE="$RELEASE_MODE"
 jupytext --to notebook --execute -o "$OUTDIR/$NAME.ipynb" "$INPUT"
 
 duration="$SECONDS"

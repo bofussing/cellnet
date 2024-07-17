@@ -121,9 +121,11 @@ def regplot(R, dim, key2text):
     if key in "ta va tl vl".split(' '):
       ax = sns.scatterplot(ax=ax, data=R, 
         x=dim, y=key, hue=R[vi].map(lambda l: l[0])) 
-      sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax) 
-      ax.set_title(f'{text} vs {key2text[dim]}')
-      ax.set_xlabel(key2text[dim])
+      try: sns.regplot(x=dim, y=key, data=R, scatter=False, ax=ax) 
+      except Exception as e: print(f"Error. Cannot plot regression {dim}-{key}, because {e.__class__.__name__}: {e}") 
+      dimtext = key2text[dim] if dim in key2text else f'{dim}'
+      ax.set_title(f'{text} vs {dimtext}')
+      ax.set_xlabel(dimtext)
       ax.set_ylabel(key2text[key])
       
       sns.move_legend(ax, "lower left")

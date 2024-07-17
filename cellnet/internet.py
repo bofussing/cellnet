@@ -46,7 +46,7 @@ class GHAPI(object):
   @ghapi('releases', paging=100)
   def get_all_releases(response): 
     # sort by release date 
-    response = sorted(response, key=lambda x: x['published_at'], reverse=True)
+    response = sorted(response, key=lambda x: x['published_at'], reverse=True)  # type: ignore
     return [r['tag_name'] for r in response]  # type: ignore
   
 

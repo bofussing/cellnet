@@ -1,0 +1,29 @@
+  ===  RUNNING ./train (bright) at Mon Jul 15 21:12:01 EEST 2024 ===  
+Mon Jul 15 21:12:02 2024       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.54.14              Driver Version: 550.54.14      CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla V100-PCIE-16GB           Off |   00000000:3D:00.0 Off |                    0 |
+| N/A   40C    P0             37W /  250W |       0MiB /  16384MiB |      1%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+                                                                                         
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+[jupytext] Reading ./results/./train/240715-211158-bright-val-RUNNING/train.py in format py
+[jupytext] Setting kernel python3
+[jupytext] Updating notebook metadata with '{"kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3 (ipykernel)"}}'
+[jupytext] Executing notebook with kernel python3
+[jupytext] Writing ./results/./train/240715-211158-bright-val-RUNNING/train.ipynb
+
+> Notebook execution time (hhmmss) 004838
+find: cannot delete ‘./results/./train/240715-211158-bright-val-RUNNING/cellnet’: Directory not empty

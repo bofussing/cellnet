@@ -41,20 +41,22 @@ batch2cpu = lambda B, z=None, y=None: [obj(**{k:cpu(v) for v,k in zip(b, 'xmklzy
               *([] if z is None else [z]), *([] if y is None else [y]))]
 
 
-def load_images(paths): return {imgid(p): cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in paths}
+def load_images(paths): return {p: cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in paths}
 
-def load_points(path, ids, l2i):
-  P = {i:[] for i in ids}; L = {i:[] for i in ids}
+def load_points(path, image_paths, l2i):
+  image_ids = [imgid(p) for p in image_paths]
+  P = {i:[] for i in image_paths}; L = {i:[] for i in image_paths}
   for entry in (raw := json.load(open(path))):
-    image_id = int(entry['data']['img'].split('/')[-1][9:].split('.')[0])
-    if image_id not in ids: continue
+    image_id = entry['data']['img'].split('/')[-1][9:].split('.')[0]
+    if image_id not in image_ids: continue
+    i = image_paths[image_ids.index(image_id)]
     for annotation in entry['annotations']:
-      for result in annotation['result']:
+      for result in annotation['result']: 
         x = result['value']['x']/100 * result['original_width']
         y = result['value']['y']/100 * result['original_height']
         l = result['value']['keypointlabels'][0]
-        P[image_id] += [(x,y)]
-        L[image_id] += [l2i(l)]
+        P[i] += [(x,y)]
+        L[i] += [l2i(l)]
   return [mapd(v, np.array) for v in (P,L)]
 
 
@@ -65,7 +67,7 @@ class CellnetDataset(torch.utils.data.Dataset):
     super().__init__()
     self.batch_size = noneor(batch_size, len(image_paths))
     self.maxdist=maxdist; self.fraction=fraction; self.sparsity=sparsity
-    self.ids=[imgid(p) for p in image_paths]; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
+    self.ids=image_paths; self.sigma=sigma; self.label2int=label2int; self.transforms = transforms if transforms else lambda **x:x
     self.X = load_images(image_paths)  # NOTE albumentations=BHWC 可是 torch=BCHW
     self.P, self.L = load_points(point_annotations_file, self.ids, label2int)
     
@@ -116,7 +118,7 @@ def mk_loader(image_paths, bs, transforms, cfg, shuffle=True):
       class_labels = [s['class_labels'] for s in S],
     )
 
-  if image_paths=='all': image_paths = cfg.annotated_images
+  if type(image_paths)==str and image_paths=='all': image_paths = cfg.annotated_images
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
   return torch.utils.data.DataLoader(CellnetDataset(image_paths, transforms=transforms, batch_size=bs, **cfg.__dict__), 
     batch_size=bs, shuffle=shuffle, collate_fn=collate, pin_memory=True, num_workers=8) # TODO: figure out and fix error and change back #8 if torch.cuda.is_available() else 2)
@@ -209,9 +211,9 @@ def mk_fgmask(ids, X, thresh=0.01):
   
   # if data/masks/fgmasks.npy exists, load it, otherwise create it
   cachedir = os.path.expanduser('~/.cache/cellnet')
-  try: return {i: np.load(f'{cachedir}/fgmasks/{i}.npy') for i in ids}
+  try: return {i: np.load(f'{cachedir}/fgmasks/{imgid(i)}.npy') for i in ids}
   except FileNotFoundError: 
     M = wrapDictAsStack(create_masks, ids)(X)
     os.makedirs(f'{cachedir}/fgmasks', exist_ok=True)
-    for i in ids: np.save(f'{cachedir}/fgmasks/{i}.npy', M[i])
+    for i in ids: np.save(f'{cachedir}/fgmasks/{imgid(i)}.npy', M[i])
     return M

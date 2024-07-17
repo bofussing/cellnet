@@ -4,25 +4,22 @@
 
 STARTTIME="$(date +%y%m%d-%H%M%S)"
 INPUT="$1"
-TAG="${2:-?}"
+EXPERIMENT="$2"
+RELEASE_MODE="$3"
 
 NAME="$(basename "$INPUT" .py)"
 INDIR="$(dirname "$INPUT")"; if [ "$INDIR" =  "" ]; then INDIR="."; fi
-OUTDIR="./results/$INDIR/$NAME/$STARTTIME-$TAG-RUNNING"
+OUTDIR="./results/$INDIR/$NAME/$STARTTIME-$EXPERIMENT"
+if [ "$RELEASE_MODE" != "" ]; then OUTDIR="$OUTDIR-$RELEASE_MODE"; fi
+OUTDIR="$OUTDIR-RUNNING"
 
 echo -e "  ===  PREPARING BATCHJOB $INPUT at $STARTTIME ===  \n"
 
 mkdir -p "$OUTDIR"
 
-rsync -a "." "$OUTDIR" --exclude .git --exclude results --filter=':- .gitignore'
+rsync -a "." "$OUTDIR" --exclude .git --exclude results
 
 INPUT="$OUTDIR/$NAME.py"
 mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT" 
 
-#if [ -z "$SLURM_JOBID" ]; then
-#  export SLURM_JOBID=local-$(date +%y%m%d-%H%M%S)
-#  bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$TAG" 2>&1 "_____________$SLURM_JOBID-RUNNING"
-#  mv "_____________$SLURM_JOBID-RUNNING" "$OUTDIR/local.log"
-#else 
-sbatch -J "$TAG" bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$TAG"
-#fi
+sbatch -J "$EXPERIMENT" bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE"

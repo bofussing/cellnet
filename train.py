@@ -1,13 +1,69 @@
 # %% [markdown]
 # # CellNet
 
-# %% # Imports 
-AUGS = 'train'
-#P = 'sigma'; ps = [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
-#P = 'rmbad'; ps = [0.15]
-P = 'bright_aug'; ps = 'True'
-RELEASE = True
+# %% # Config and Imports
 
+
+experiments = dict(
+  default =     ('val', 'release', [True]), 
+  bright =      ('val', 'brightness augmentation', [True]),  ###train 
+  rmbad =       ('val', 'rmbad', [0.15]),
+  loss =        ('val', 'lossf', ['MSE', 'BCE']), # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad
+)
+
+annotated_images = ['data/1.jpg', 'data/2.jpg', 'data/4.jpg']
+
+
+import os, torch, numpy as np
+from types import SimpleNamespace as obj
+
+
+EXPERIMENT = os.getenv('EXPERIMENT', 'default')
+CUDA = torch.cuda.is_available()
+device = torch.device('cuda:0' if CUDA else 'cpu'); print('device =', device)
+
+AUG_MODE, P, ps = experiments[EXPERIMENT]
+
+modes = ['release', 'crossval', 'draft']
+MODE = os.getenv('RELEASE_MODE', 'draft')
+if MODE not in modes: MODE = 'crossval'
+# MODE undefined => interactive execution => draft
+# MODE unknown = custom tag => default to crossval
+
+augmodes = ['train', 'val', 'test']
+
+annotated_images = np.array(annotated_images); i=annotated_images
+data_splits = dict(
+  draft = [(i[[0]],  i[[1]])],
+  release = [(i, i)],
+  crossval = [(i[[1,2]], i[[0]]), (i[[0,2]], i[[1]]), (i[[0,1]], i[[2]])]
+)[MODE]
+CROPSIZE = 256
+
+cfg_base = obj(**(dict(
+  EXPERIMENT=EXPERIMENT,
+  epochs = 2 if MODE=='draft' else 351,
+  sigma=5.0,  # NOTE: do grid search again later when better convergence 
+  maxdist=26, 
+  lossf='MSE',
+  fraction=1, 
+  sparsity=1,
+  lr_steps=2.5,
+  lr_gamma=0.1,
+  rmbad=0,
+  xnorm_type='image_per_channel',
+  xnorm_params={},
+  annotated_images=np.array(annotated_images),
+  data_splits=data_splits,
+  aug_mode=AUG_MODE,
+  device=device,
+  cropsize=CROPSIZE,
+  MODE=MODE,
+  )|{P: ps[-1]})
+)
+AUG_MODE = augmodes.index(cfg_base.aug_mode)
+
+print(cfg_base)
 
 import torch
 import matplotlib.pyplot as plt
@@ -21,55 +77,23 @@ from types import SimpleNamespace as obj
 from cellnet.data import *
 import cellnet.plot as plot
 
-
-CUDA = torch.cuda.is_available()
-device = torch.device('cuda:0' if CUDA else 'cpu'); print('device =', device)
-DRAFT = False if os.getenv('BATCHED_RUN', '0')=='1' else True; print('DRAFT =', DRAFT)
-
-
 key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
             'ta': 'Training Accuracy', 'va': 'Validation Accuracy', 
             'ti': 'Training Image',    'vi': 'Validation Image',
-            'lf': 'Loss Function',     'lr': 'Learning Rate',
             'e' : 'Epoch',             'bs': 'Batch Size',
+            'lossf': 'Loss Function',  'lr': 'Learning Rate',
             'fraction': 'Fraction of Data',  'sparsity': 'Artificial Sparsity',  
             'sigma': 'Gaussian Sigma',        'maxdist': 'Max Distance',
             'rmbad': 'Prop. of Difficult Labels Removed'
             }
 
-CROPSIZE=256  
-
-annotated_images = np.array(['data/1.jpg', 'data/2.jpg', 'data/4.jpg']); i=annotated_images
-data_splits = [(i[[0]],  i[[1]])] if DRAFT else\
-                  [(i, i)] if RELEASE else\
-                  [(i[[1,2]], i[[0]]), (i[[0,2]], i[[1]]), (i[[0,1]], i[[2]])] # crossval
-
-
-cfg_base = obj(
-  epochs=(5 if CUDA else 1) if DRAFT else 101 if not RELEASE else 351,
-  sigma=5.0,  # NOTE: do grid search again later when better convergence 
-  maxdist=26, 
-  fraction=1, 
-  sparsity=1,
-  lr_steps=1.25 if not RELEASE else 2.5,
-  lr_gamma=0.1,
-  rmbad=0,
-  xnorm_type='image_per_channel',
-  xnorm_params={},
-  annotated_images=annotated_images,
-  data_splits=data_splits,
-  augs=AUGS,
-  device=device,
-  cropsize=CROPSIZE,
-  draft=DRAFT,
-  **{P: ps[-1]}
-)
 
 # %% # Load Data
 
 XNorm, cfg_base.xnorm_params = mk_XNorm(cfg_base)
 
 def mkAugs(mode):
+  if type(mode) is int: mode = augmodes[mode]
   T = lambda ts:  A.Compose(transforms=[
     A.PadIfNeeded(CROPSIZE, CROPSIZE, border_mode=0, value=0),
     *ts,
@@ -85,6 +109,7 @@ def mkAugs(mode):
   return dict(
     test  = T([]),
     val   = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
+ ###              A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25),
                *vals]),
     train = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
                #A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
@@ -93,13 +118,12 @@ def mkAugs(mode):
                #A.Equalize(),
                #A.ColorJitter(), 
                #A.GaussNoise(),
-               A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25),
                *vals])
   )[mode]
 
 
 # %% # Plot data 
-if DRAFT and not CUDA: 
+if MODE=='draft' and not CUDA: 
   kp2hm, yunnorm, _ = mk_kp2mh_yunnorm(cfg_base)
 
   from math import prod
@@ -123,7 +147,7 @@ plt.close('all')
 
 import segmentation_models_pytorch as smp
 mk_model = lambda: smp.Unet(  # NOTE TODO: check if spefically used model automatically mirror pads in training or inference
-    encoder_name="resnet34" if DRAFT else "resnet152",  # 18 34 50 101 152
+    encoder_name="resnet34" if MODE=='draft' else "resnet152",  # 18 34 50 101 152
     encoder_weights=None,
     in_channels=3,
     classes=1,
@@ -169,7 +193,7 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
       with torch.no_grad():
         log.loc[e,'vl'], log.loc[e,'va'] = epoch(valdl, train=False) 
 
-    if DRAFT: plot.train_graph(e, log, info=info, key2text=key2text, clear=True)
+    if MODE=='draft': plot.train_graph(e, log, info=info, key2text=key2text, clear=True)
   plot.train_graph(epochs, log, info=info, key2text=key2text, accuracy=False) 
   return log
 
@@ -198,7 +222,7 @@ def loss_per_point(b, lossf, kernel=15, exclude=[]):
 
 
 results = pd.DataFrame()
-if not DRAFT: [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
+if not MODE=='draft': [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
 
 def training_run(cfg, traindl, valdl, kp2hm, model=None):
   global results  
@@ -207,7 +231,15 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
   if model is None: model = mk_model()
   optim = torch.optim.Adam(model.parameters(), lr=5e-3)
-  lossf = torch.nn.MSELoss()
+  lossf = dict(
+    MSE = torch.nn.MSELoss(),
+    BCE = torch.nn.BCELoss(),
+    Focal = smp.losses.FocalLoss('binary'),
+    MCC = smp.losses.MCCLoss(),
+    Dice = smp.losses.DiceLoss('binary', from_logits=False),
+  )[cfg.lossf]
+  # TODO implement label smoothing?
+
   sched = torch.optim.lr_scheduler.StepLR(optim, step_size=int(cfg.epochs/cfg.lr_steps)+1, gamma=cfg.lr_gamma)
 
   log = train(cfg.epochs, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
@@ -230,13 +262,13 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
       if cfg.rmbad != 0: # get the badly predicted points and plot them
         p2L = loss_per_point(b, lossf, kernel=15, exclude=[2])
-        if RELEASE or i in vi: 
+        if MODE=='release' or i in vi: 
           i2p2L[i] = p2L  # only save the losses for the validation image 
 
-        np.save(f'p2L-{imgid(i)}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
-        print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
+        #np.save(f'p2L-{imgid(i)}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
+        #print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
 
-      if (RELEASE or [imgid(_v) for _v in vi]==['4']) and (imgid(i) in ('1','4')):  # plot T1 and V4 for all [1,2]|[4] runs
+      if (MODE=='release' or [imgid(_v) for _v in vi]==['4']) and (imgid(i) in ('1','4')):  # plot T1 and V4 for all [1,2]|[4] runs
         ax1 = plot.overlay(b.x, b.y, b.m, b.k, b.l, cfg.sigma) 
         ax2 = plot.diff   (b.y, b.z, b.m, b.k, b.l, cfg.sigma)
         ax3 = None
@@ -247,8 +279,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
           for a in (ax1, ax2, ax3):
             plot.points(a, b.k[rm], b.l[rm], colormap='#00ff00', lw=3)
            
-
-        if not DRAFT: 
+        if not MODE=='draft': 
           id = f"{P}={p}-{t}{imgid(i)}"
           #np.save(f'preds/{id}.npy', y)
           plot.save(ax1, f'plots/{id}.pred.png')
@@ -258,12 +289,13 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
   return dict(model=model, log=log, i2p2L=i2p2L)
 
-
-loader = lambda c, ids, mode: mk_loader(ids, bs=1 if mode=='test' else 16, shuffle=False, cfg=c,
-    transforms=mkAugs(('val' if AUGS=='train' else 'test') if mode=='_val_' else mode)) 
+# mode == 2 => aka test augs => no cropping
+def get_loader(cfg, ti, vi, mode):
+  loader = lambda m, ids: (m:=min(m,2), mk_loader(ids, bs=1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m)))[-1]
+  return [loader(mode, ti), loader(mode+1, vi) if vi is not None and len(vi)>0 else None]
 kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg_base)
 
-for p in [ps[-1]] if DRAFT else ps:
+for p in [ps[-1]] if MODE=='draft' else ps:
   cfg = obj(**(cfg_base.__dict__ | {P: p}))
   if P in ['sigma']: kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg)
 
@@ -272,7 +304,7 @@ for p in [ps[-1]] if DRAFT else ps:
   for ti, vi in data_splits:
     cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
 
-    traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_') if vi else None
+    traindl, valdl = get_loader(cfg, ti, vi, AUG_MODE)
 
     out = training_run(cfg, traindl, valdl, kp2hm)
     i2p2L |= out['i2p2L'] # NOTE: overrides if image in multiple val sets
@@ -285,15 +317,29 @@ for p in [ps[-1]] if DRAFT else ps:
     for ti, vi in data_splits:
       cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi, epochs=cfg.epochs//2+1, rmbad=0.1)))
 
-      traindl, valdl = loader(cfg, ti, AUGS), loader(cfg, vi, '_val_') if vi else None
+      traindl, valdl = get_loader(cfg, ti, vi, AUG_MODE)
 
       def regen_masks(dl):
         ds: CellnetDataset = dl.dataset # type: ignore
+        _old_ds_P_len = {i: len(ds.P[i]) for i in ds.P}
+        _keep_len = {i: len(keep[i]) for i in keep}
         ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
         ds.L = {i: ds.L[i][keep[i]] for i in ds.L}
+        _mid_ds_P_len = {i: len(ds.P[i]) for i in ds.P}
         ds._generate_masks(fraction=1, sparsity=1)
+        _new_ds_P_len = {i: len(ds.P[i]) for i in ds.P}
         # regenerate masks, but don't throw away more data (f,s=1)
-        # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a compley refactor
+        # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a bigish refactor
+        for i in ds.P:
+          print(f"DEBUG: regen_masks {i}: P: {_old_ds_P_len[i]} - {_keep_len[i]} = {_mid_ds_P_len[i]} = {_new_ds_P_len[i]}")
+
+        # plot the new masks
+        for i,B in enumerate(mk_loader(image_paths='all', cfg=cfg, bs=1, transforms=mkAugs('test'), shuffle=False)):
+          b = batch2cpu(B, z=kp2hm(B))[0]
+          ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg.sigma)
+          if not MODE=='draft': 
+            plot.save(ax, f'plots/regen_masks-{i}.png')
+            plt.close(ax.get_figure())
       
       regen_masks(traindl)
       if valdl: regen_masks(valdl)
@@ -302,8 +348,8 @@ for p in [ps[-1]] if DRAFT else ps:
                          model=out['model'])  # type: ignore
   
 # %%
-if RELEASE: # save model to disk
-  B = next(iter(mk_loader([1], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False)))
+if MODE=='release': # save model to disk
+  B = next(iter(mk_loader(['data/1.jpg'], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False)))
   x = batch2cpu(B)[0].x[None]
   
   m = out['model'] # type: torch.nn.Module # type: ignore 
@@ -317,12 +363,19 @@ if RELEASE: # save model to disk
   m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
   os.remove('./model_export/README.md')
 
-  with open('./model_export/settings.json', 'w') as f: json.dump({'ymax':float(_ymax), **cfg_base.__dict__}, f, indent=2)
+  # convert all ndarray to list for json serialization
+  def rec_dict_array2list(d):
+    for k,v in d.items():
+      if isinstance(v, dict): rec_dict_array2list(v)
+      if isinstance(v, np.ndarray): d[k] = v.tolist()
+  settings = rec_dict_array2list(cfg_base.__dict__ | {'ymax':float(_ymax)})
+
+  with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
 
 
 # %% # save the results as csv. exclude model column; plot accuracies
 
-if not DRAFT:
+if not MODE=='draft':
   results.to_csv('results.csv', index=False, sep=';')
   R = results.copy()
   R['vi'] = R['ti']; R['vl'] = R['tl']; R['va'] = R['ta']   # HACK because in RELEASE vi=[]
