@@ -3,18 +3,20 @@
 
 # %% # Config and Imports
 
-
+# after experiment successful, summarize findings in respective ipynb and integrate into defaults
 experiments = dict(
-  default =     ('val', 'release', [True]), 
-  bright =      ('val', 'brightness augmentation', [True]),  ###train 
-  rmbad =       ('val', 'rmbad', [0.15]),
-  loss =        ('val', 'lossf', ['MSE', 'BCE']), # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad
+  default =     ('default', [None]), 
+  trainaugs =   ('augmode', ['train']),
+  nobright =      ('brightaug', [False]),  
+  rmbad =       ('rmbad', [0.15]),
+  lossbce =     ('lossf', ['BCE'])  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad
 )
+# TODO: better unified framework where the whole file is ran only once per paramter and regression plots are aggregated seperatedly. Collect related experiments into one folder (externally)
 
 annotated_images = ['data/1.jpg', 'data/2.jpg', 'data/4.jpg']
 
 
-import os, torch, numpy as np
+import os, torch, numpy as np, json
 from types import SimpleNamespace as obj
 
 
@@ -22,7 +24,7 @@ EXPERIMENT = os.getenv('EXPERIMENT', 'default')
 CUDA = torch.cuda.is_available()
 device = torch.device('cuda:0' if CUDA else 'cpu'); print('device =', device)
 
-AUG_MODE, P, ps = experiments[EXPERIMENT]
+P, ps = experiments[EXPERIMENT]
 
 modes = ['release', 'crossval', 'draft']
 MODE = os.getenv('RELEASE_MODE', 'draft')
@@ -34,36 +36,35 @@ augmodes = ['train', 'val', 'test']
 
 annotated_images = np.array(annotated_images); i=annotated_images
 data_splits = dict(
-  draft = [(i[[0]],  i[[1]])],
-  release = [(i, i)],
+  draft = [([0],  [1])],
+  release = [([0,1,2], [])],
   crossval = [(i[[1,2]], i[[0]]), (i[[0,2]], i[[1]]), (i[[0,1]], i[[2]])]
 )[MODE]
 CROPSIZE = 256
 
 cfg_base = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  epochs = 2 if MODE=='draft' else 351,
-  sigma=5.0,  # NOTE: do grid search again later when better convergence 
-  maxdist=26, 
-  lossf='MSE',
-  fraction=1, 
-  sparsity=1,
-  lr_steps=2.5,
-  lr_gamma=0.1,
-  rmbad=0,
-  xnorm_type='image_per_channel',
-  xnorm_params={},
-  annotated_images=np.array(annotated_images),
-  data_splits=data_splits,
-  aug_mode=AUG_MODE,
-  device=device,
+  annotated_images=annotated_images,
+  aug_mode='val',  # TODO: bump to train
+  brightaug=True,
   cropsize=CROPSIZE,
+  data_splits=data_splits,
+  device=device,
+  epochs = 2 if MODE=='draft' else 351,
+  fraction=1, 
+  lossf='MSE',
+  lr_gamma=0.1,
+  lr_steps=2.5,
+  maxdist=26, 
   MODE=MODE,
+  rmbad=0,
+  sigma=5.0,  # NOTE: do grid search again later when better convergence 
+  sparsity=1,
+  xnorm_params={},
+  xnorm_type='image_per_channel',
   )|{P: ps[-1]})
 )
 AUG_MODE = augmodes.index(cfg_base.aug_mode)
-
-print(cfg_base)
 
 import torch
 import matplotlib.pyplot as plt
@@ -73,21 +74,23 @@ import albumentations as A; from albumentations.pytorch import ToTensorV2
 
 import os, json
 from types import SimpleNamespace as obj
+from statistics import mean, stdev
 
 from cellnet.data import *
 import cellnet.plot as plot
+import cellnet.debug as debug
 
 key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
             'ta': 'Training Accuracy', 'va': 'Validation Accuracy', 
             'ti': 'Training Image',    'vi': 'Validation Image',
-            'e' : 'Epoch',             'bs': 'Batch Size',
-            'lossf': 'Loss Function',  'lr': 'Learning Rate',
+            'bs': 'Batch Size',        'b' : 'Minibatches',       
+            'e' : 'Epoch',             'lr': 'Learning Rate',
+            'lossf': 'Loss Function',  'rmbad': 'Prop. of Difficult Labels Removed',
             'fraction': 'Fraction of Data',  'sparsity': 'Artificial Sparsity',  
             'sigma': 'Gaussian Sigma',        'maxdist': 'Max Distance',
-            'rmbad': 'Prop. of Difficult Labels Removed'
             }
 
-
+json.dumps(cfg_base.__dict__, indent=2)  
 # %% # Load Data
 
 XNorm, cfg_base.xnorm_params = mk_XNorm(cfg_base)
@@ -109,9 +112,9 @@ def mkAugs(mode):
   return dict(
     test  = T([]),
     val   = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
- ###              A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25),
                *vals]),
     train = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
+               *([A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25)] if P == 'bright' and ps == [True] and AUG_MODE == 'train' else []),
                #A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
                #A.Rotate(),
                #A.AdvancedBlur(),
@@ -164,22 +167,22 @@ def accuracy(y,z):
 def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={}):
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
   def epoch(dl, train):
-    l = 0; a = 0; b = 0
-    for b, B in enumerate(dl):
+    l = []; a = []
+    for B in dl:
       x,m = B['image'].to(device), B['masks'][0].to(device)
       z = kp2hm(B).to(device)
 
       y = model(x)
       loss = lossf(y*m, z*m) 
-      l += loss.item()
-      a += accuracy(y*m, z*m)
+      l += [loss.item()]
+      a += [accuracy(y*m, z*m)]
 
       if train:
         loss.backward()
         optim.step()
         optim.zero_grad()
 
-    return l/(b+1), a/(b+1)
+    return l, a
 
   for e in range(epochs):
     log.loc[e,'lr'] = optim.param_groups[0]['lr']
@@ -197,18 +200,8 @@ def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={
   plot.train_graph(epochs, log, info=info, key2text=key2text, accuracy=False) 
   return log
 
-# time the function and print its duration
-import time
-def timeit(f):
-  def timed(*args, **kw):
-    ts = time.time()
-    result = f(*args, **kw)
-    te = time.time()
-    print(f'{f.__name__} took {te-ts} seconds')
-    return result
-  return timed
 
-@timeit
+@debug.timeit
 def loss_per_point(b, lossf, kernel=15, exclude=[]):
   loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
   p2L = np.zeros(len(b.l))
@@ -238,7 +231,6 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
     MCC = smp.losses.MCCLoss(),
     Dice = smp.losses.DiceLoss('binary', from_logits=False),
   )[cfg.lossf]
-  # TODO implement label smoothing?
 
   sched = torch.optim.lr_scheduler.StepLR(optim, step_size=int(cfg.epochs/cfg.lr_steps)+1, gamma=cfg.lr_gamma)
 
@@ -246,8 +238,6 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
   _row =  pd.DataFrame(dict(**{P: [p]}, ti=[ti], vi=[vi], **log.iloc[-1]))
   results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
-  # TODO CHECK is the saved accuracy correct? Because model ran on sanger reports counts ({'data/4.jpg': 1335.7061956439575, 'data/2.jpg': 1477.7731458703638, 'data/1.jpg': 1791.7817114729842, 'data/3.jpg': 1916.6642587431998}) that are only 0.787571807701338 (0.9790417598444654, 0.7550352604295545, 0.6286384028299937) 
-
 
   i2p2L = {}
   # plot and save predictions to disk
@@ -373,13 +363,19 @@ if MODE=='release': # save model to disk
   with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
 
 
-# %% # save the results as csv. exclude model column; plot accuracies
+# %% # save and plot results
+
+for k in 'tl vl ta va lr'.split(' '):
+  results[k+'_mean'] = results[k].apply(mean)  # type: ignore
+  results[k+'_std'] = results[k].apply(stdev) 
 
 if not MODE=='draft':
   results.to_csv('results.csv', index=False, sep=';')
   R = results.copy()
-  R['vi'] = R['ti']; R['vl'] = R['tl']; R['va'] = R['ta']   # HACK because in RELEASE vi=[]
   R.rename(columns=dict(vi=key2text['vi']), inplace=True)
   plot.regplot(R, P, key2text)
 
 results # type: ignore
+
+# %%
+debug.print_times()
