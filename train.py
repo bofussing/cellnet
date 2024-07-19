@@ -5,15 +5,17 @@
 
 # after experiment successful, summarize findings in respective ipynb and integrate into defaults
 experiments = dict(
-  default =     ('default', [None]), 
-  trainaugs =   ('augmode', ['train']),
-  nobright =      ('brightaug', [False]),  
-  rmbad =       ('rmbad', [0.15]),
-  lossbce =     ('lossf', ['BCE'])  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad
+  test =        ('epochs', 2),
+  default =     ('default', None), 
+  augbc =       ('augbc', [True, False]),  
+  trainaugs =   ('augmode', ['val','train']),
+##  rmbad =       ('rmbad', 0.1), ## DECRAP
+  loss =        ('lossf', ['MSE','BCE']),  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad
+  sigma =       ('sigma', [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]),
 )
 # TODO: better unified framework where the whole file is ran only once per paramter and regression plots are aggregated seperatedly. Collect related experiments into one folder (externally)
 
-annotated_images = ['data/1.jpg', 'data/2.jpg', 'data/4.jpg']
+image_paths = ['data/1.jpg', 'data/2.jpg', 'data/4.jpg']
 
 
 import os, torch, numpy as np, json
@@ -34,22 +36,22 @@ if MODE not in modes: MODE = 'crossval'
 
 augmodes = ['train', 'val', 'test']
 
-annotated_images = np.array(annotated_images); i=annotated_images
 data_splits = dict(
-  draft = [([0],  [1])],
+  draft = [([0],  [2])],
   release = [([0,1,2], [])],
-  crossval = [(i[[1,2]], i[[0]]), (i[[0,2]], i[[1]]), (i[[0,1]], i[[2]])]
+  crossval = [([1,2], [0]), ([0,2], [1]), ([0,1], [2])]
 )[MODE]
-CROPSIZE = 256
+_a = np.array(image_paths)
+data_splits = [[list(_a[ii]) for ii in tv] for tv in data_splits]
 
-cfg_base = obj(**(dict(
+CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  annotated_images=annotated_images,
+  image_paths=image_paths,
   aug_mode='val',  # TODO: bump to train
-  brightaug=True,
-  cropsize=CROPSIZE,
+  augbc=False,
+  cropsize=256,
   data_splits=data_splits,
-  device=device,
+  device=f'{device}',
   epochs = 2 if MODE=='draft' else 351,
   fraction=1, 
   lossf='MSE',
@@ -57,14 +59,14 @@ cfg_base = obj(**(dict(
   lr_steps=2.5,
   maxdist=26, 
   MODE=MODE,
+  param=P,
   rmbad=0,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
   xnorm_params={},
   xnorm_type='image_per_channel',
-  )|{P: ps[-1]})
+  )|{P: ps})
 )
-AUG_MODE = augmodes.index(cfg_base.aug_mode)
 
 import torch
 import matplotlib.pyplot as plt
@@ -90,18 +92,20 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
             'sigma': 'Gaussian Sigma',        'maxdist': 'Max Distance',
             }
 
-json.dumps(cfg_base.__dict__, indent=2)  
+# save the config to disk
+with open('cfg.json', 'w') as f:  f.write(json.dumps(CFG.__dict__, indent=2))
 # %% # Load Data
 
-XNorm, cfg_base.xnorm_params = mk_XNorm(cfg_base)
+XNorm, CFG.xnorm_params = mk_XNorm(CFG)
 
 def mkAugs(mode):
+  C = CFG.cropsize
   if type(mode) is int: mode = augmodes[mode]
   T = lambda ts:  A.Compose(transforms=[
-    A.PadIfNeeded(CROPSIZE, CROPSIZE, border_mode=0, value=0),
+    A.PadIfNeeded(C,C, border_mode=0, value=0),
     *ts,
     XNorm(), 
-    A.PadIfNeeded(CROPSIZE, CROPSIZE, border_mode=0, value=0),
+    A.PadIfNeeded(C,C, border_mode=0, value=0),
     ToTensorV2(transpose_mask=True, always_apply=True)], 
     keypoint_params=A.KeypointParams(format='xy', label_fields=['class_labels'], remove_invisible=True) 
   )
@@ -111,10 +115,10 @@ def mkAugs(mode):
 
   return dict(
     test  = T([]),
-    val   = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
+    val   = T([A.RandomCrop(C,C, p=1),
+               *([A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25)] if CFG.param == 'augbc' and CFG.augbc else []),  # TODO move to train
                *vals]),
-    train = T([A.RandomCrop(CROPSIZE, CROPSIZE, p=1),
-               *([A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25)] if P == 'bright' and ps == [True] and AUG_MODE == 'train' else []),
+    train = T([A.RandomCrop(C,C, p=1),
                #A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
                #A.Rotate(),
                #A.AdvancedBlur(),
@@ -127,22 +131,22 @@ def mkAugs(mode):
 
 # %% # Plot data 
 if MODE=='draft' and not CUDA: 
-  kp2hm, yunnorm, _ = mk_kp2mh_yunnorm(cfg_base)
+  kp2hm, yunnorm, _ = mk_kp2mh_yunnorm(CFG)
 
   from math import prod
   def plot_grid(grid, **loader_kwargs):
-    loader = mk_loader(cfg_base.annotated_images[[0]], cfg=cfg_base, bs=prod(grid), **loader_kwargs)
+    loader = mk_loader([CFG.image_paths[0]], cfg=CFG, bs=prod(grid), **loader_kwargs)
     B = next(iter(loader))
     B = batch2cpu(B, z=kp2hm(B))
-    for b,ax in zip(B, plot.grid(grid, [CROPSIZE]*2)[1]):
-      plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg_base.sigma, ax=ax)
+    for b,ax in zip(B, plot.grid(grid, ([CFG.cropsize]*2))[1]):
+      plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma, ax=ax)
 
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
 
-  for B in mk_loader(image_paths='all', cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False):
+  for B in mk_loader(image_paths, cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False):
     b = batch2cpu(B, z=kp2hm(B))[0]
-    ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg_base.sigma)
+    ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma)
  
 
 # %% # Create model 
@@ -164,54 +168,24 @@ def accuracy(y,z):
   ny, nz = y.sum().item(), z.sum().item()
   return 1 - abs(ny - nz) / (nz+1e-9)
 
-def train(epochs, model, optim, lossf, sched, kp2hm, traindl, valdl=None, info={}):
-  log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(epochs))
-  def epoch(dl, train):
-    l = []; a = []
-    for B in dl:
-      x,m = B['image'].to(device), B['masks'][0].to(device)
-      z = kp2hm(B).to(device)
+def epoch(model, kp2hm, lossf, dl, optim=None):
+  l = 0; a = 0; b = 0
+  for B in dl:
+    x,m = B['image'].to(device), B['masks'][0].to(device)
+    z = kp2hm(B).to(device)
 
-      y = model(x)
-      loss = lossf(y*m, z*m) 
-      l += [loss.item()]
-      a += [accuracy(y*m, z*m)]
+    y = model(x)
+    loss = lossf(y*m, z*m) 
+    l += loss.item()
+    a += accuracy(y*m, z*m)
+    b += 1
 
-      if train:
-        loss.backward()
-        optim.step()
-        optim.zero_grad()
+    if optim is not None:
+      loss.backward()
+      optim.step()
+      optim.zero_grad()
 
-    return l, a
-
-  for e in range(epochs):
-    log.loc[e,'lr'] = optim.param_groups[0]['lr']
-  
-    model.train()
-    log.loc[e,'tl'], log.loc[e,'ta'] = epoch(traindl, train=True)
-    sched.step() 
-  
-    if valdl is not None: 
-      model.eval()
-      with torch.no_grad():
-        log.loc[e,'vl'], log.loc[e,'va'] = epoch(valdl, train=False) 
-
-    if MODE=='draft': plot.train_graph(e, log, info=info, key2text=key2text, clear=True)
-  plot.train_graph(epochs, log, info=info, key2text=key2text, accuracy=False) 
-  return log
-
-
-@debug.timeit
-def loss_per_point(b, lossf, kernel=15, exclude=[]):
-  loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
-  p2L = np.zeros(len(b.l))
-  for i, (l, (x,y)) in enumerate(zip(b.l, b.k)):
-    #if l in exclude: continue  # NOTE hack to exclude losses for negative annotations (TODO reevaluate why)
-    xx, yy = np.meshgrid(np.arange(loss.shape[2]), np.arange(loss.shape[1]))
-    k = (xx-x)**2 + (yy-y)**2 < kernel**2
-    p2L[i] = (loss * k).sum()
-
-  return p2L
+  return l/b, a/b
 
 
 results = pd.DataFrame()
@@ -234,10 +208,44 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
   sched = torch.optim.lr_scheduler.StepLR(optim, step_size=int(cfg.epochs/cfg.lr_steps)+1, gamma=cfg.lr_gamma)
 
-  log = train(cfg.epochs, model, optim, lossf, sched, kp2hm, traindl, valdl, info={P: p})
 
-  _row =  pd.DataFrame(dict(**{P: [p]}, ti=[ti], vi=[vi], **log.iloc[-1]))
-  results = _row if results.empty else pd.concat([results, _row], ignore_index=True)
+  log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(cfg.epochs))
+  
+  for e in range(cfg.epochs):
+    log.loc[e,'lr'] = optim.param_groups[0]['lr']
+  
+    model.train()
+    log.loc[e,'tl'], log.loc[e,'ta'] = epoch(model, kp2hm, lossf, traindl, optim)
+    sched.step() 
+  
+    if valdl is not None: 
+      model.eval()
+      with torch.no_grad():
+        log.loc[e,'vl'], log.loc[e,'va'] =epoch(model, kp2hm, lossf, valdl) 
+
+    if MODE=='draft': plot.train_graph(e, log, info={P: p}, key2text=key2text, clear=True)
+  plot.train_graph(cfg.epochs, log, info={P: p}, key2text=key2text, accuracy=False) 
+
+  row = dict(**{P: p}, ti=ti, vi=vi, **log.iloc[-1])
+
+  # compute loss distributions for a few batches 
+  # NOTE is very inefficient since we already do it once with BS 16, which should suffice.. now again n_batches*16 times..
+  if True or MODE != 'draft':
+    tvla = 'tl vl ta va'.split(' ')
+    model.eval()
+    # edit last row of results
+    for k in tvla: row[k] = []
+    for b in range(n_batches := 10): 
+      tl, ta = epoch(model, kp2hm, lossf, traindl)
+      vl, va = epoch(model, kp2hm, lossf, valdl) if valdl is not None else (float('nan'), float('nan'))
+      for k,v in zip(tvla, [tl, vl, ta, va]): row[k].append(v) # type: ignore
+
+    for k in tvla: 
+      row[k+'_mean'] = np.array(row[k]).mean() # type: ignore
+      row[k+'_std'] = np.array(row[k]).std() # type: ignore
+
+  results = pd.DataFrame([row]) if results.empty else pd.concat([results, pd.DataFrame([row])], ignore_index=True)
+
 
   i2p2L = {}
   # plot and save predictions to disk
@@ -280,13 +288,15 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
   return dict(model=model, log=log, i2p2L=i2p2L)
 
 # mode == 2 => aka test augs => no cropping
-def get_loader(cfg, ti, vi, mode):
+def get_loader(cfg, ti, vi):
+  augmode = augmodes.index(cfg.aug_mode)
   loader = lambda m, ids: (m:=min(m,2), mk_loader(ids, bs=1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m)))[-1]
-  return [loader(mode, ti), loader(mode+1, vi) if vi is not None and len(vi)>0 else None]
-kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg_base)
+  return [loader(augmode, ti), loader(augmode+1, vi) if vi is not None and len(vi)>0 else None]
+kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(CFG)
 
-for p in [ps[-1]] if MODE=='draft' else ps:
-  cfg = obj(**(cfg_base.__dict__ | {P: p}))
+_ps = ps if type(ps) is list else [ps]
+for p in [_ps[-1]] if MODE=='draft' else _ps:
+  cfg = obj(**(CFG.__dict__ | {P: p}))
   if P in ['sigma']: kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg)
 
   i2p2L = {}
@@ -294,7 +304,7 @@ for p in [ps[-1]] if MODE=='draft' else ps:
   for ti, vi in data_splits:
     cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
 
-    traindl, valdl = get_loader(cfg, ti, vi, AUG_MODE)
+    traindl, valdl = get_loader(cfg, ti, vi)
 
     out = training_run(cfg, traindl, valdl, kp2hm)
     i2p2L |= out['i2p2L'] # NOTE: overrides if image in multiple val sets
@@ -307,7 +317,7 @@ for p in [ps[-1]] if MODE=='draft' else ps:
     for ti, vi in data_splits:
       cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi, epochs=cfg.epochs//2+1, rmbad=0.1)))
 
-      traindl, valdl = get_loader(cfg, ti, vi, AUG_MODE)
+      traindl, valdl = get_loader(cfg, ti, vi)
 
       def regen_masks(dl):
         ds: CellnetDataset = dl.dataset # type: ignore
@@ -324,7 +334,7 @@ for p in [ps[-1]] if MODE=='draft' else ps:
           print(f"DEBUG: regen_masks {i}: P: {_old_ds_P_len[i]} - {_keep_len[i]} = {_mid_ds_P_len[i]} = {_new_ds_P_len[i]}")
 
         # plot the new masks
-        for i,B in enumerate(mk_loader(image_paths='all', cfg=cfg, bs=1, transforms=mkAugs('test'), shuffle=False)):
+        for i,B in enumerate(mk_loader(image_paths, cfg=cfg, bs=1, transforms=mkAugs('test'), shuffle=False)):
           b = batch2cpu(B, z=kp2hm(B))[0]
           ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg.sigma)
           if not MODE=='draft': 
@@ -334,12 +344,11 @@ for p in [ps[-1]] if MODE=='draft' else ps:
       regen_masks(traindl)
       if valdl: regen_masks(valdl)
 
-      out = training_run(cfg, traindl, valdl, kp2hm, 
-                         model=out['model'])  # type: ignore
+      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model'])  # type: ignore
   
 # %%
 if MODE=='release': # save model to disk
-  B = next(iter(mk_loader(['data/1.jpg'], cfg=cfg_base, bs=1, transforms=mkAugs('test'), shuffle=False)))
+  B = next(iter(mk_loader(['data/1.jpg'], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
   x = batch2cpu(B)[0].x[None]
   
   m = out['model'] # type: torch.nn.Module # type: ignore 
@@ -358,24 +367,32 @@ if MODE=='release': # save model to disk
     for k,v in d.items():
       if isinstance(v, dict): rec_dict_array2list(v)
       if isinstance(v, np.ndarray): d[k] = v.tolist()
-  settings = rec_dict_array2list(cfg_base.__dict__ | {'ymax':float(_ymax)})
+  settings = rec_dict_array2list(CFG.__dict__ | {'ymax':float(_ymax)})
 
   with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
 
 
 # %% # save and plot results
 
-for k in 'tl vl ta va lr'.split(' '):
-  results[k+'_mean'] = results[k].apply(mean)  # type: ignore
-  results[k+'_std'] = results[k].apply(stdev) 
-
 if not MODE=='draft':
+  from io import StringIO
+  import ast
   results.to_csv('results.csv', index=False, sep=';')
+
+    ## TODO those nans
+  with open('results.csv', 'r') as f:
+    nan = "0"
+    csv = f.read().replace('nan', nan).replace('NaN', nan)
+    while ";;"  in csv: csv = csv.replace(";;", ";"+nan+";")
+    while ";\n" in csv: csv = csv.replace(";\n", ";"+nan+"\n")
+    if csv[:-1] == ";": csv = csv + nan
+
+  cols = pd.read_csv(StringIO(csv), sep=';').columns
+  R = pd.read_csv(StringIO(csv), sep=';', converters={col:ast.literal_eval for col in cols})
+  R.rename(columns=dict(vi=key2text['vi']), inplace=True)
+
   R = results.copy()
   R.rename(columns=dict(vi=key2text['vi']), inplace=True)
   plot.regplot(R, P, key2text)
 
-results # type: ignore
-
-# %%
 debug.print_times()

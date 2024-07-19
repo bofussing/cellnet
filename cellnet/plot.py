@@ -109,7 +109,7 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
     if key in "lr tl vl".split(' '): ax = axs[0]
     elif not accuracy: continue
     else: ax = axs[1]
-    v = mean(log[key]) if hasattr(log[key], '__len__') else log[key]
+    v = log['key'].apply(mean)   if hasattr(log[key][0], '__len__') else log[key]
     ax.plot(v, label=key2text[key] if key2text else key)
 
   for ax in axs:
@@ -120,17 +120,17 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
 
 def regplot(data, dim, key2text):
   import seaborn as sns
-  keys = ['ta', 'va', 'tl', 'vl'] 
-  data = data.explode(keys)
-  fig, axs = plt.subplots(2,2, figsize=(15,10))
+  data = data.explode(keys := ['ta', 'va', 'tl', 'vl'] )
+  for key in keys: data[key] = data[key].apply(lambda x: float(x) if x != 'nan' else float('nan'))
+  fig, axs = plt.subplots(2,2, figsize=(20,20*2/3))
   for ax, key in zip(axs.flat, keys):
     try: 
       sns.regplot(x=dim, y=key, data=data, scatter=False, ax=ax) 
+      sns.scatterplot(ax=ax, data=data, x=dim, y=key, hue=data[key2text['vi']].apply(lambda vi: vi[0] if len(vi)==1 else str(vi)))
     except Exception as e: 
       print(f"Log. Cannot plot regression {dim}-{key}, because {e.__class__.__name__}: {e}") 
-      sns.boxplot(x=dim, y=key, data=data, ax=ax, orient='v')
-    finally: 
-      ax = sns.scatterplot(ax=ax, data=data, x=dim, y=key) 
+      sns.violinplot(x=dim, y=key, data=data, ax=ax, orient='v', fill=False, inner="quart")
+      sns.swarmplot(ax=ax, data=data, x=dim, y=key, hue=data[key2text['vi']].apply(lambda vi: vi[0] if len(vi)==1 else str(vi)))
     dimtext = key2text[dim] if dim in key2text else f'{dim}'
     ax.set_title(f'{key2text[key]} vs {dimtext}')
     ax.set_xlabel(dimtext)

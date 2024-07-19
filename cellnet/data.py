@@ -1,6 +1,5 @@
 # NOTE on data format: this is all BHWC. Except Keypoints2Heatmap which is HWC. Torch needs BCHW, albumentations makes the conversions
 
-
 import pathlib
 import numpy as np, cv2
 from scipy.ndimage import gaussian_filter, distance_transform_edt
@@ -10,6 +9,9 @@ import torch, torch.utils.data
 import json, os
 import albumentations as A
 from types import SimpleNamespace as obj
+
+
+import cellnet.debug as debug
 
 
 noneor = lambda x, d: x if x is not None else d 
@@ -118,14 +120,13 @@ def mk_loader(image_paths, bs, transforms, cfg, shuffle=True):
       class_labels = [s['class_labels'] for s in S],
     )
 
-  if type(image_paths)==str and image_paths=='all': image_paths = cfg.annotated_images
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
-  return torch.utils.data.DataLoader(CellnetDataset(image_paths, transforms=transforms, batch_size=bs, **cfg.__dict__), 
+  return torch.utils.data.DataLoader(CellnetDataset(**(cfg.__dict__ | dict(image_paths=image_paths, transforms=transforms, batch_size=bs))), 
     batch_size=bs, shuffle=shuffle, collate_fn=collate, pin_memory=True, num_workers=8) # TODO: figure out and fix error and change back #8 if torch.cuda.is_available() else 2)
 
 
-def mk_XNorm(cfg, norm_using_images='all'):
-  if norm_using_images == 'all': norm_using_images = cfg.annotated_images
+def mk_XNorm(cfg, norm_using_images='all'):# -> tuple[Callable[..., Normalize], dict[str, list[Any]]]:
+  if norm_using_images == 'all': norm_using_images = cfg.image_paths
   X = dict2stack(load_images(norm_using_images))
   params = dict(
     mean = list(X.mean(axis=(0,1,2))/255),
@@ -137,8 +138,8 @@ def mk_XNorm(cfg, norm_using_images='all'):
 
 def mk_kp2mh_yunnorm(cfg, norm_using_images='all'):
   """Z-score norm improves DNN training according to @lecun2002efficient. BWHC"""
-  if norm_using_images == 'all': norm_using_images = cfg.annotated_images
-  ds = CellnetDataset(norm_using_images, **cfg.__dict__)
+  if norm_using_images == 'all': norm_using_images = cfg.image_paths
+  ds = CellnetDataset(**(cfg.__dict__ | dict(image_paths=norm_using_images)))
 
   Y = np.stack([Keypoints2Heatmap(cfg.sigma, ynorm=lambda y:y, labels_to_include=[1])(x.transpose(2,0,1),[m],p,l) 
                 for x,m,p,l in zip(*[v.values() for v in [ds.X, ds.M, ds.P, ds.L]])], axis=0)
@@ -163,6 +164,18 @@ def Keypoints2Heatmap(sigma, ynorm, labels_to_include=[1]):
       Y[...,c] = gaussian_filter(Y[...,c], sigma=sigma, mode='constant', cval=0)
     return torch.from_numpy(ynorm(Y)).permute(2,0,1).to(torch.float32)  # HWC -> CHW
   return f
+
+
+@debug.timeit
+def loss_per_point(b, lossf, kernel=15, exclude=[]):
+  loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
+  p2L = np.zeros(len(b.l))
+  for i, (l, (x,y)) in enumerate(zip(b.l, b.k)):
+    #if l in exclude: continue  # NOTE hack to exclude losses for negative annotations (TODO reevaluate why)
+    xx, yy = np.meshgrid(np.arange(loss.shape[2]), np.arange(loss.shape[1]))
+    k = (xx-x)**2 + (yy-y)**2 < kernel**2
+    p2L[i] = (loss * k).sum()
+  return p2L
 
 
 # this function expects a batch dim in P and L
