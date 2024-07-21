@@ -7,18 +7,26 @@
 experiments = dict(
   test =        ('epochs', 2),
   default =     ('default', True), 
+  xnorm_per_channel = ('xnorm_type', 'image_per_channel'),
+  augbc =       ('augbc', [True, False]),  
+  trainaugs =   ('augmode', ['val','train']),
 ##  rmbad =       ('rmbad', 0.1), ## DECRAP
-  loss =        ('lossf', ['MSE','BCE']),  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad
+  loss =        ('lossf', ['MSE','BCE', 'KLD', 'MSE+BCE', 'MSE+BCE+KLD']),  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
+  # TODO: if linearcomb is better, then grid search weight
   sigma =       ('sigma', [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]),
 )
-# TODO: better unified framework where the whole file is ran only once per paramter and regression plots are aggregated seperatedly. Collect related experiments into one folder (externally)
 
-image_paths = ['data/1.jpg', 'data/2.jpg', 'data/4.jpg']
+from cellnet import data
+import pandas as pd
+
+data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
+
+image_paths = [i for i in data.ls('data/images') if data_quality.loc[data.imgid(i), 'annotation_status'] in ('fully', 'sparse', 'empty')]
+crossval_vals = 'QS_7415 QS_7510 | 2 4 | 4 QS_7510'
 
 
-import os, torch, numpy as np, json
+import os, torch, json
 from types import SimpleNamespace as obj
-
 
 EXPERIMENT = os.getenv('EXPERIMENT', 'default')
 CUDA = torch.cuda.is_available()
@@ -28,24 +36,24 @@ P, ps = experiments[EXPERIMENT]
 
 modes = ['release', 'crossval', 'draft']
 MODE = os.getenv('RELEASE_MODE', 'draft')
-if MODE not in modes: MODE = 'crossval'
-# MODE undefined => interactive execution => draft
-# MODE unknown = custom tag => default to crossval
+if MODE not in modes: MODE = 'crossval' 
+# MODE undefined => interactive execution with draft; uknown custom tag defaults to crossval
+
 
 augmodes = ['train', 'val', 'test']
-
-data_splits = dict(
-  draft = [([0],  [2])],
-  release = [([0,1,2], [])],
-  crossval = [([1,2], [0]), ([0,2], [1]), ([0,1], [2])]
-)[MODE]
-_a = np.array(image_paths)
-data_splits = [[list(_a[ii]) for ii in tv] for tv in data_splits]
+if   MODE=='draft': data_splits = [(['data/images/1.jpg'], ['data/images/4.jpg'])]
+elif MODE=='release': data_splits = [(image_paths, [])]
+else: #MODE=='crossval': 
+  crossval_vals = [s.split(' ') for s in crossval_vals.split(' | ')]
+  data_splits = [([p for p in image_paths if data.imgid(p) not in vs], 
+                  [p for p in image_paths if data.imgid(p)     in vs]) 
+                  for vs in crossval_vals]
+  
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
   image_paths=image_paths,
-  augmode='val',  # TODO: bump to train
+  aug_mode='train',  # TODO: bump to train
   augbc=False,
   cropsize=256,
   data_splits=data_splits,
@@ -62,7 +70,7 @@ CFG = obj(**(dict(
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
   xnorm_params={},
-  xnorm_type='image_per_channel',
+  xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
   )|{P: ps})
 )
 
@@ -92,9 +100,10 @@ key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss',
 
 # save the config to disk
 with open('cfg.json', 'w') as f:  f.write(json.dumps(CFG.__dict__, indent=2))
+
 # %% # Load Data
 
-XNorm, CFG.xnorm_params = mk_XNorm(CFG)
+XNorm, CFG.xnorm_params = mk_XNorm(CFG, image_paths)
 
 def mkAugs(mode):
   C = CFG.cropsize
@@ -146,7 +155,6 @@ if MODE=='draft' and not CUDA:
     b = batch2cpu(B, z=kp2hm(B))[0]
     ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma)
  
-
 # %% # Create model 
 plt.close('all')
 
@@ -196,16 +204,17 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
   if model is None: model = mk_model()
   optim = torch.optim.Adam(model.parameters(), lr=5e-3)
-  lossf = dict(
+  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=int(cfg.epochs/cfg.lr_steps)+1, gamma=cfg.lr_gamma)
+  losses = dict(
     MSE = torch.nn.MSELoss(),
     BCE = torch.nn.BCELoss(),
     Focal = smp.losses.FocalLoss('binary'),
     MCC = smp.losses.MCCLoss(),
     Dice = smp.losses.DiceLoss('binary', from_logits=False),
-  )[cfg.lossf]
-
-  sched = torch.optim.lr_scheduler.StepLR(optim, step_size=int(cfg.epochs/cfg.lr_steps)+1, gamma=cfg.lr_gamma)
-
+    KLD = torch.nn.KLDivLoss(reduction='batchmean'),  
+  )
+  lossfs = [losses[l] for l in cfg.lossf.split('+')]
+  lossf = lambda y,z: sum([lf(y,z) for lf in lossfs])
 
   log = pd.DataFrame(columns='tl vl ta va lr'.split(' '), index=range(cfg.epochs))
   
@@ -290,8 +299,8 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
 # mode == 2 => aka test augs => no cropping
 def get_loader(cfg, ti, vi):
-  augmode = augmodes.index(cfg.augmode)
-  loader = lambda m, ids: (m:=min(m,2), mk_loader(ids, bs=1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m)))[-1]
+  augmode = augmodes.index(cfg.aug_mode)
+  loader = lambda m, ids: (m:=min(m,2), mk_loader(ids, bs = 1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m)))[-1]
   return [loader(augmode, ti), loader(augmode+1, vi) if vi is not None and len(vi)>0 else None]
 kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(CFG)
 
@@ -323,15 +332,12 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
       def regen_masks(dl):
         ds: CellnetDataset = dl.dataset # type: ignore
         ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
-        ds.L = {i: ds.L[i][keep[i]] for i in ds.L}
         ds._generate_masks(fraction=1, sparsity=1)
         # regenerate masks, but don't throw away more data (f,s=1)
         # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a bigish refactor
 
-        # plot the new masks
-        for i,B in enumerate(mk_loader(image_paths, cfg=cfg, bs=1, transforms=mkAugs('test'), shuffle=False)):
-          b = batch2cpu(B, z=kp2hm(B))[0]
-          ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, cfg.sigma)
+        for i in ds.P:
+          ax = plot.overlay(ds.X[i], None, ds.M[i], ds.P[i][:,[0,1]], ds.P[i][:,2], cfg.sigma)
           if not MODE=='draft': 
             plot.save(ax, f'plots/regen_masks-{i}.png')
             plt.close(ax.get_figure())

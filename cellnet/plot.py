@@ -4,7 +4,13 @@ import numpy as np
 import itertools as it
 from statistics import mean
 
-import cellnet.data as data
+try: 
+  f = plt.figure()
+  plt.close(f)
+except Exception as e:
+  print(f'NOTE: cellnet.plot will try switching to headless plotting, because {e.__class__.__name__}: {e}')
+  import matplotlib
+  matplotlib.use("Agg")
 
 
 ZOOM = 1
@@ -33,12 +39,13 @@ def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   return image(out, ax=ax)
 
 
-def points(ax, points, labels=None, radius=8.0, colormap={1: 'black', 2: '#7700ff'}, marker='o', **scatter_args):
+def points(ax, points, labels=None, radius=10.0, colormap={1: 'black', 2: '#7700ff'}, marker='o', **scatter_args):
   """"[(x,y), ...]"""
   s = np.pi*radius**2*10000 if marker == 'o' else 10000*radius**2
   if 'lw' in scatter_args: scatter_args['lw']*=100
-  cs = 'black' if labels is None else [colormap[i] for i in labels] if type(colormap) is not str else colormap
-  ax.scatter(*zip(*points), **dict(facecolors='none', edgecolors=cs, marker=marker, alpha=0.4, s=s, lw=150) | scatter_args)
+  cs = colormap if labels is None else [colormap[i] for i in labels] if type(colormap) is not str else colormap
+  fc = 'none' if marker == 'o' else cs
+  ax.scatter(*zip(*points), **dict(facecolors=fc, edgecolors=cs, marker=marker, alpha=0.6, s=s, lw=200) | scatter_args)
   
 
 def grid(grid, shape, zoom=None):
@@ -54,7 +61,7 @@ def grid(grid, shape, zoom=None):
   return fig, axs
 
 
-def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
+def image(img, ax=None, zoom=None, norm=True, **imshow_kwargs):
   global ZOOM
   if zoom is None: zoom = ZOOM
   if img.ndim == 3 and img.shape[0] in (1,3,4): img = np.transpose(img, (1,2,0))
@@ -63,21 +70,22 @@ def image(img, ax=None, zoom=None, exact=True, **imshow_kwargs):
 
   if ax == None:
     # no whitespace and 1:1 pixel resolution
-    fig = plt.figure(frameon=not exact, layout='tight', dpi=1)
+    fig = plt.figure(frameon=False, layout='tight', dpi=1)
     ax = fig.add_axes((0,0,1,1))
     fig.set_size_inches(img.shape[1]/fig.dpi*zoom, img.shape[0]/fig.dpi*zoom)  
     ax.axis('off')
 
-  img = (img - img.min()) / (1e-9+ img.max() - img.min())
+  if norm: img = (img - img.min()) / (1e-9+ img.max() - img.min())  # NOTE: else user has to ensure that image is in [0,1]
+  elif (max:=img.max()) > 1 and max <= 255 and img.min() >= 0: img /= 255
   ax.imshow(img, interpolation='none', **imshow_kwargs)
   return ax
 
 
-def overlay(x, y=None, m=None, k=None, l=None, sigma=4.0, ax=None):
-  ax = image(x, ax=ax)
+def overlay(x, y=None, m=None, k=None, l=None, sigma=5.0, ax=None, args_point={}, args_image={}):
+  ax = image(x, ax=ax, **args_image)
   if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.5*x, color='#000000')
   if y is not None: heatmap(y, ax=ax, alpha=lambda x: 1.0*x, color='#ff0000')
-  if k is not None and l is not None: points(ax, k, l, sigma*2)
+  if k is not None and l is not None and len(k) and len(l): points(ax, k, l, sigma*1.5, **args_point)
   return ax
 
 def diff(y, z, m=None, k=None, l=None, sigma=4.0, ax=None):
@@ -85,7 +93,7 @@ def diff(y, z, m=None, k=None, l=None, sigma=4.0, ax=None):
   D = y-z; D[0, 1,0] = -1; D[0, 1,1] = 1 
   ax = image(D, ax=ax, cmap='coolwarm')
   if m is not None: heatmap(1-m, ax=ax, alpha=lambda x: 0.2*x, color='#000000')
-  if k is not None and l is not None: points(ax, k, l, sigma*2)
+  if k is not None and l is not None: points(ax, k, l, sigma*1.5)
   return ax
 
 
