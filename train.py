@@ -6,9 +6,7 @@
 # after experiment successful, summarize findings in respective ipynb and integrate into defaults
 experiments = dict(
   test =        ('epochs', 2),
-  default =     ('default', None), 
-  augbc =       ('augbc', [True, False]),  
-  trainaugs =   ('augmode', ['val','train']),
+  default =     ('default', True), 
 ##  rmbad =       ('rmbad', 0.1), ## DECRAP
   loss =        ('lossf', ['MSE','BCE']),  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad
   sigma =       ('sigma', [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]),
@@ -47,7 +45,7 @@ data_splits = [[list(_a[ii]) for ii in tv] for tv in data_splits]
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
   image_paths=image_paths,
-  aug_mode='val',  # TODO: bump to train
+  augmode='val',  # TODO: bump to train
   augbc=False,
   cropsize=256,
   data_splits=data_splits,
@@ -116,9 +114,9 @@ def mkAugs(mode):
   return dict(
     test  = T([]),
     val   = T([A.RandomCrop(C,C, p=1),
-               *([A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25)] if CFG.param == 'augbc' and CFG.augbc else []),  # TODO move to train
                *vals]),
     train = T([A.RandomCrop(C,C, p=1),
+               A.RandomBrightnessContrast(p=1, brightness_limit=0.25, contrast_limit=0.25),
                #A.RandomSizedCrop(p=1, min_max_height=(CROPSIZE//2, CROPSIZE*2), height=CROPSIZE, width=CROPSIZE),  # NOTE: issue with resize is that the keypoint sizes will not be updated
                #A.Rotate(),
                #A.AdvancedBlur(),
@@ -230,11 +228,13 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
   # compute loss distributions for a few batches 
   # NOTE is very inefficient since we already do it once with BS 16, which should suffice.. now again n_batches*16 times..
-  if True or MODE != 'draft':
+
+  @debug.timeit
+  def evaluate_performance():
     tvla = 'tl vl ta va'.split(' ')
     model.eval()
     # edit last row of results
-    for k in tvla: row[k] = []
+    for k in tvla: row[k] = []  # type: ignore
     for b in range(n_batches := 10): 
       tl, ta = epoch(model, kp2hm, lossf, traindl)
       vl, va = epoch(model, kp2hm, lossf, valdl) if valdl is not None else (float('nan'), float('nan'))
@@ -243,6 +243,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
     for k in tvla: 
       row[k+'_mean'] = np.array(row[k]).mean() # type: ignore
       row[k+'_std'] = np.array(row[k]).std() # type: ignore
+  if MODE != 'draft': evaluate_performance()
 
   results = pd.DataFrame([row]) if results.empty else pd.concat([results, pd.DataFrame([row])], ignore_index=True)
 
@@ -289,7 +290,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
 # mode == 2 => aka test augs => no cropping
 def get_loader(cfg, ti, vi):
-  augmode = augmodes.index(cfg.aug_mode)
+  augmode = augmodes.index(cfg.augmode)
   loader = lambda m, ids: (m:=min(m,2), mk_loader(ids, bs=1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m)))[-1]
   return [loader(augmode, ti), loader(augmode+1, vi) if vi is not None and len(vi)>0 else None]
 kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(CFG)
@@ -321,17 +322,11 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
 
       def regen_masks(dl):
         ds: CellnetDataset = dl.dataset # type: ignore
-        _old_ds_P_len = {i: len(ds.P[i]) for i in ds.P}
-        _keep_len = {i: len(keep[i]) for i in keep}
         ds.P = {i: ds.P[i][keep[i]] for i in ds.P}
         ds.L = {i: ds.L[i][keep[i]] for i in ds.L}
-        _mid_ds_P_len = {i: len(ds.P[i]) for i in ds.P}
         ds._generate_masks(fraction=1, sparsity=1)
-        _new_ds_P_len = {i: len(ds.P[i]) for i in ds.P}
         # regenerate masks, but don't throw away more data (f,s=1)
         # NOTE: because we do it for each split repeatedly its a waste of compute. More efficient: to do it once but would need a bigish refactor
-        for i in ds.P:
-          print(f"DEBUG: regen_masks {i}: P: {_old_ds_P_len[i]} - {_keep_len[i]} = {_mid_ds_P_len[i]} = {_new_ds_P_len[i]}")
 
         # plot the new masks
         for i,B in enumerate(mk_loader(image_paths, cfg=cfg, bs=1, transforms=mkAugs('test'), shuffle=False)):
@@ -376,22 +371,23 @@ if MODE=='release': # save model to disk
 
 if not MODE=='draft':
   from io import StringIO
-  import ast
+  import ast, csv
+
+  if type(results[P][0]) == str: results[P] = results[P].apply(lambda s: "'"+s+"'")
   results.to_csv('results.csv', index=False, sep=';')
 
     ## TODO those nans
   with open('results.csv', 'r') as f:
     nan = "0"
-    csv = f.read().replace('nan', nan).replace('NaN', nan)
-    while ";;"  in csv: csv = csv.replace(";;", ";"+nan+";")
-    while ";\n" in csv: csv = csv.replace(";\n", ";"+nan+"\n")
-    if csv[:-1] == ";": csv = csv + nan
+    s = f.read().replace('nan', nan).replace('NaN', nan).strip()
+    while ";;"  in s: s = s.replace(";;", ";"+nan+";")
+    while ";\n" in s: s = s.replace(";\n", ";"+nan+"\n")
+    while "\n;" in s: s = s.replace("\n;", "\n"+nan+";")
+    if s[-1] == ";": s = s + nan
+    if s[0] == ";": s = nan + s
 
-  cols = pd.read_csv(StringIO(csv), sep=';').columns
-  R = pd.read_csv(StringIO(csv), sep=';', converters={col:ast.literal_eval for col in cols})
-  R.rename(columns=dict(vi=key2text['vi']), inplace=True)
-
-  R = results.copy()
+  cols = pd.read_csv(StringIO(s), sep=';').columns
+  R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
   R.rename(columns=dict(vi=key2text['vi']), inplace=True)
   plot.regplot(R, P, key2text)
 

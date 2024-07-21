@@ -1,0 +1,57 @@
+{
+  "EXPERIMENT": "trainaugs",
+  "image_paths": [
+    "data/1.jpg",
+    "data/2.jpg",
+    "data/4.jpg"
+  ],
+  "augmode": [
+    "val",
+    "train"
+  ],
+  "augbc": false,
+  "cropsize": 256,
+  "data_splits": [
+    [
+      [
+        "data/2.jpg",
+        "data/4.jpg"
+      ],
+      [
+        "data/1.jpg"
+      ]
+    ],
+    [
+      [
+        "data/1.jpg",
+        "data/4.jpg"
+      ],
+      [
+        "data/2.jpg"
+      ]
+    ],
+    [
+      [
+        "data/1.jpg",
+        "data/2.jpg"
+      ],
+      [
+        "data/4.jpg"
+      ]
+    ]
+  ],
+  "device": "cuda:0",
+  "epochs": 351,
+  "fraction": 1,
+  "lossf": "MSE",
+  "lr_gamma": 0.1,
+  "lr_steps": 2.5,
+  "maxdist": 26,
+  "MODE": "crossval",
+  "param": "augmode",
+  "rmbad": 0,
+  "sigma": 5.0,
+  "sparsity": 1,
+  "xnorm_params": {},
+  "xnorm_type": "image_per_channel"
+}
