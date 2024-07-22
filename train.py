@@ -6,6 +6,8 @@
 # after experiment successful, summarize findings in respective ipynb and integrate into defaults
 experiments = dict(
   default =     ('default', True), 
+  draft =       ('draft', True),
+  architecures = ('model_architecture', ['Unet', 'UnetPlusPlus']),
   xnorm_per_channel = ('xnorm_type', 'image_per_channel'),
 ##  rmbad =       ('rmbad', 0.1), ## DECRAP
   loss =        ('lossf', ['MSE','BCE', 'KLD', 'MSE+BCE', 'MSE+BCE+KLD']),  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
@@ -61,7 +63,7 @@ CFG = obj(**(dict(
   lr_steps=2.5,
   maxdist=26, 
   MODE=MODE,
-  model_architecture='UnetPlusPlus',
+  model_architecture='Unet',
   model_encoder='resnet152',
   param=P,
   rmbad=0,
@@ -69,11 +71,12 @@ CFG = obj(**(dict(
   sparsity=1,
   xnorm_params={},
   xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
-  ))
-)
-if MODE=='draft': 
+  ) | {P: ps[-1] if type(ps) is list else ps}))
+
+if 'draft' in CFG.__dict__ and CFG.draft is True: 
   CFG.epochs = 2
-  CFG.model_encoder = 'resnet34'
+  #CFG.model_architecture = 'UNet'
+  #CFG.model_encoder = 'resnet34'
 
 import torch
 import matplotlib.pyplot as plt
@@ -158,25 +161,20 @@ if MODE=='draft' and not CUDA:
 # %% # Create model 
 plt.close('all')
 
-_encoder = 
 import segmentation_models_pytorch as smp
-match CFG.model: 
-  case 'Unet': 
-    mk_model = lambda: smp.Unet( 
-        encoder_name=CFG.model_encoder, 
-        encoder_weights=None,
-        in_channels=3,
-        classes=1,
-        activation='sigmoid',
-      ).to(device) # type: ignore
-  case 'UnetPlusPlus':
-    mk_model = lambda: smp.UnetPlusPlus( 
-        encoder_name=CFG.model_encoder, 
-        encoder_weights=None,
-        in_channels=3,
-        classes=1,
-        activation='sigmoid',
-      ).to(device) # type: ignore
+
+mk_mk_model = lambda cls: lambda: cls(
+  encoder_name=CFG.model_encoder, 
+  encoder_weights=None,
+  in_channels=3,
+  classes=1,
+  activation='sigmoid',
+).to(device)
+
+mk_model = dict(
+  Unet = mk_mk_model(smp.Unet),
+  UnetPlusPlus = mk_mk_model(smp.UnetPlusPlus),
+)[CFG.model_architecture]
 
 # %% # Train 
 
