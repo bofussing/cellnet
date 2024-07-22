@@ -13,13 +13,11 @@ OUTDIR="./results/$INDIR/$NAME/$STARTTIME-$EXPERIMENT"
 if [ "$RELEASE_MODE" != "" ]; then OUTDIR="$OUTDIR-$RELEASE_MODE"; fi
 OUTDIR="$OUTDIR-RUNNING"
 
-echo -e "  ===  PREPARING BATCHJOB $INPUT at $STARTTIME ===  \n"
-
 mkdir -p "$OUTDIR"
-
 rsync -a "." "$OUTDIR" --exclude .git --exclude results
 
 INPUT="$OUTDIR/$NAME.py"
-mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT" 
+mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT" 2>/dev/null
 
-sbatch -J "$EXPERIMENT" bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE"
+out="$(sbatch -J "$EXPERIMENT" bin/ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE")"
+echo -e "\033[1;32m$out $NAME:$EXPERIMENT ($RELEASE_MODE) at $STARTTIME\033[0m"

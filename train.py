@@ -5,15 +5,14 @@
 
 # after experiment successful, summarize findings in respective ipynb and integrate into defaults
 experiments = dict(
-  test =        ('epochs', 2),
   default =     ('default', True), 
   xnorm_per_channel = ('xnorm_type', 'image_per_channel'),
-  augbc =       ('augbc', [True, False]),  
-  trainaugs =   ('augmode', ['val','train']),
 ##  rmbad =       ('rmbad', 0.1), ## DECRAP
   loss =        ('lossf', ['MSE','BCE', 'KLD', 'MSE+BCE', 'MSE+BCE+KLD']),  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
   # TODO: if linearcomb is better, then grid search weight
   sigma =       ('sigma', [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]),
+  fraction =    ('fraction', [0.1, 0.25, 0.5, 0.75, 0.875, 1.0]),
+  sparsity =    ('sparsity', [0.1, 0.25, 0.5, 0.75, 0.875, 1.0]),
 )
 
 from cellnet import data
@@ -22,7 +21,7 @@ import pandas as pd
 data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
 
 image_paths = [i for i in data.ls('data/images') if data_quality.loc[data.imgid(i), 'annotation_status'] in ('fully', 'sparse', 'empty')]
-crossval_vals = 'QS_7415 QS_7510 | 2 4 | 4 QS_7510'
+crossval_vals = '1 | QS_7510 | QS_7415'
 
 
 import os, torch, json
@@ -40,7 +39,6 @@ if MODE not in modes: MODE = 'crossval'
 # MODE undefined => interactive execution with draft; uknown custom tag defaults to crossval
 
 
-augmodes = ['train', 'val', 'test']
 if   MODE=='draft': data_splits = [(['data/images/1.jpg'], ['data/images/4.jpg'])]
 elif MODE=='release': data_splits = [(image_paths, [])]
 else: #MODE=='crossval': 
@@ -52,27 +50,30 @@ else: #MODE=='crossval':
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  image_paths=image_paths,
-  aug_mode='train',  # TODO: bump to train
-  augbc=False,
   cropsize=256,
   data_splits=data_splits,
   device=f'{device}',
-  epochs = 2 if MODE=='draft' else 351,
+  epochs=351,
   fraction=1, 
+  image_paths=image_paths,
   lossf='MSE',
   lr_gamma=0.1,
   lr_steps=2.5,
   maxdist=26, 
   MODE=MODE,
+  model_architecture='UnetPlusPlus',
+  model_encoder='resnet152',
   param=P,
   rmbad=0,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
   sparsity=1,
   xnorm_params={},
   xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
-  )|{P: ps})
+  ))
 )
+if MODE=='draft': 
+  CFG.epochs = 2
+  CFG.model_encoder = 'resnet34'
 
 import torch
 import matplotlib.pyplot as plt
@@ -107,7 +108,6 @@ XNorm, CFG.xnorm_params = mk_XNorm(CFG, image_paths)
 
 def mkAugs(mode):
   C = CFG.cropsize
-  if type(mode) is int: mode = augmodes[mode]
   T = lambda ts:  A.Compose(transforms=[
     A.PadIfNeeded(C,C, border_mode=0, value=0),
     *ts,
@@ -151,21 +151,32 @@ if MODE=='draft' and not CUDA:
   plot_grid((3,3), transforms=mkAugs('val'))
   plot_grid((3,3), transforms=mkAugs('train'))
 
-  for B in mk_loader(image_paths, cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False):
+  for B in mk_loader(CFG.image_paths, cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False):
     b = batch2cpu(B, z=kp2hm(B))[0]
     ax = plot.overlay(b.x, b.z, b.m, b.k, b.l, CFG.sigma)
  
 # %% # Create model 
 plt.close('all')
 
+_encoder = 
 import segmentation_models_pytorch as smp
-mk_model = lambda: smp.Unet(  # NOTE TODO: check if spefically used model automatically mirror pads in training or inference
-    encoder_name="resnet34" if MODE=='draft' else "resnet152",  # 18 34 50 101 152
-    encoder_weights=None,
-    in_channels=3,
-    classes=1,
-    activation='sigmoid',
-  ).to(device) # type: ignore
+match CFG.model: 
+  case 'Unet': 
+    mk_model = lambda: smp.Unet( 
+        encoder_name=CFG.model_encoder, 
+        encoder_weights=None,
+        in_channels=3,
+        classes=1,
+        activation='sigmoid',
+      ).to(device) # type: ignore
+  case 'UnetPlusPlus':
+    mk_model = lambda: smp.UnetPlusPlus( 
+        encoder_name=CFG.model_encoder, 
+        encoder_weights=None,
+        in_channels=3,
+        classes=1,
+        activation='sigmoid',
+      ).to(device) # type: ignore
 
 # %% # Train 
 
@@ -265,30 +276,31 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
       model.eval()
       with torch.no_grad(): y = cpu(model(B['image'].to(device)))
-      b = batch2cpu(B, z=kp2hm(B), y=y)[0]
-      del B
+      B = batch2cpu(B, z=kp2hm(B), y=y)[0]
 
+      # DECRAP everything with rmbad, p2L
       if cfg.rmbad != 0: # get the badly predicted points and plot them
-        p2L = loss_per_point(b, lossf, kernel=15, exclude=[2])
+        p2L = loss_per_point(B, lossf, kernel=15, exclude=[2])
         if MODE=='release' or i in vi: 
           i2p2L[i] = p2L  # only save the losses for the validation image 
 
         #np.save(f'p2L-{imgid(i)}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
         #print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
 
-      if (MODE=='release' or [imgid(_v) for _v in vi]==['4']) and (imgid(i) in ('1','4')):  # plot T1 and V4 for all [1,2]|[4] runs
-        ax1 = plot.overlay(b.x, b.y, b.m, b.k, b.l, cfg.sigma) 
-        ax2 = plot.diff   (b.y, b.z, b.m, b.k, b.l, cfg.sigma)
+      if (MODE=='release' or [imgid(_v) for _v in vi]==['QS_7510']) and (imgid(i) in ('1','QS_7510')):  # plot T=1 and V=QS_7510 for all [1,..]|[QS_7510,..] runs
+        ax1 = plot.overlay(B.x, B.y, B.m, B.k, B.l, cfg.sigma) 
+        ax2 = plot.diff   (B.y, B.z, B.m, B.k, B.l, cfg.sigma)
         ax3 = None
 
+        # DECRAP
         if cfg.rmbad != 0: 
-          rm = np.argsort(-i2p2L[i])[:int(len(b.l)*cfg.rmbad)]  # type: ignore
-          ax3 = plot.image(b.x); plot.points(ax3, b.k, b.l)
+          rm = np.argsort(-i2p2L[i])[:int(len(B.l)*cfg.rmbad)]  # type: ignore
+          ax3 = plot.image(B.x); plot.points(ax3, B.k, B.l)
           for a in (ax1, ax2, ax3):
-            plot.points(a, b.k[rm], b.l[rm], colormap='#00ff00', lw=3)
+            plot.points(a, B.k[rm], B.l[rm], colormap='#00ff00', lw=3)
            
         if not MODE=='draft': 
-          id = f"{P}={p}-{t}{imgid(i)}"
+          id = f"{P}={p}-{t}={imgid(i)}"
           #np.save(f'preds/{id}.npy', y)
           plot.save(ax1, f'plots/{id}.pred.png')
           plot.save(ax2, f'plots/{id}.diff.png')
@@ -299,9 +311,8 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
 # mode == 2 => aka test augs => no cropping
 def get_loader(cfg, ti, vi):
-  augmode = augmodes.index(cfg.aug_mode)
-  loader = lambda m, ids: (m:=min(m,2), mk_loader(ids, bs = 1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m)))[-1]
-  return [loader(augmode, ti), loader(augmode+1, vi) if vi is not None and len(vi)>0 else None]
+  loader = lambda m, ids: mk_loader(ids, bs = 1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m))
+  return [loader('train', ti), loader('val', vi) if vi is not None and len(vi)>0 else None]
 kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(CFG)
 
 _ps = ps if type(ps) is list else [ps]
@@ -319,6 +330,7 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
     out = training_run(cfg, traindl, valdl, kp2hm)
     i2p2L |= out['i2p2L'] # NOTE: overrides if image in multiple val sets
 
+  # DECRAP
   if cfg.rmbad != 0:  # remove the bad points and retrain
     keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in i2p2L.items()} 
     
@@ -349,7 +361,7 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
   
 # %%
 if MODE=='release': # save model to disk
-  B = next(iter(mk_loader(['data/1.jpg'], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
+  B = next(iter(mk_loader([CFG.image_paths[0]], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
   x = batch2cpu(B)[0].x[None]
   
   m = out['model'] # type: torch.nn.Module # type: ignore 

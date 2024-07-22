@@ -133,6 +133,7 @@ def regplot(data, dim, key2text):
   fig, axs = plt.subplots(2,2, figsize=(20,20*2/3))
   for ax, key in zip(axs.flat, keys):
     try: 
+      if len(data[dim].unique()) <= 1: raise Exception("Only one unique x-value.")
       sns.regplot(x=dim, y=key, data=data, scatter=False, ax=ax) 
       sns.scatterplot(ax=ax, data=data, x=dim, y=key, hue=data[key2text['vi']].apply(lambda vi: vi[0] if len(vi)==1 else str(vi)))
     except Exception as e: 

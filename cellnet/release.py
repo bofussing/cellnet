@@ -53,7 +53,7 @@ def init_model(version:str|None='latest', keep_download_cache=True):
   else: version = prexisting_version
 
   settings = json.load(open(f'{modeldir}/settings.json'))
-  model = smp.Unet.from_pretrained(f'{modeldir}')
+  model = smp.Unet.from_pretrained(f'{modeldir}')  ## TODO make class dynamic depending on settings
   setattr(model, 'settings', settings)
   setattr(model, 'version', version)
   print('Model version:', version, '(latest)' if islatest else '(cached)')

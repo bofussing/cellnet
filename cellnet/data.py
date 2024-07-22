@@ -53,7 +53,7 @@ def ls(dir, ext='', stem=False):
 def load_images(image_paths):  
   out = {}
   for p in image_paths:
-    try: out[p] = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+    try: out[p] = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)  # TODO scrap cv dependency and use PIL
     except Exception as e: raise Exception(f"Could not load image {p}.") from e
   return out
 
@@ -116,6 +116,7 @@ class CellnetDataset(torch.utils.data.Dataset):
                            if  0 <= x < self.X[i].shape[1] 
                            and 0 <= y < self.X[i].shape[0]]) 
                  for i in self.ids}
+    self.P = {i: no_points if len(P)==0 else P for i,P in self.P.items()}
 
     if (s:=sparsity) < 1.0:
       self.P = mapd(self.P, lambda a: a[::int(1/s)])
@@ -187,7 +188,7 @@ def Keypoints2Heatmap(sigma, ynorm, labels_to_include=[1]):
     return torch.from_numpy(ynorm(Y)).permute(2,0,1).to(torch.float32)  # HWC -> CHW
   return f
 
-
+# DECRAP rmbad
 @debug.timeit
 def loss_per_point(b, lossf, kernel=15, exclude=[]):
   loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
