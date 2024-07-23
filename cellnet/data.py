@@ -14,6 +14,17 @@ from types import SimpleNamespace as obj
 import cellnet.debug as debug
 
 
+key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
+            'ta': 'Training Accuracy', 'va': 'Validation Accuracy', 
+            'ti': 'Training Image',    'vi': 'Validation Image',
+            'bs': 'Batch Size',        'b' : 'Minibatches',       
+            'e' : 'Epoch',             'lr': 'Learning Rate',
+            'lossf': 'Loss Function',  'rmbad': 'Prop. of Difficult Labels Removed',
+            'fraction': 'Fraction of Data',  'sparsity': 'Artificial Sparsity',  
+            'sigma': 'Gaussian Sigma',        'maxdist': 'Max Distance',
+            }
+
+
 no_points = np.ones((1,3), dtype=np.int32)*2  ### NOTE TODO: change dtype according to load_points 
 # NOTE: this is a hack to make the dataset work with images that have no points.
 
@@ -188,8 +199,7 @@ def Keypoints2Heatmap(sigma, ynorm, labels_to_include=[1]):
     return torch.from_numpy(ynorm(Y)).permute(2,0,1).to(torch.float32)  # HWC -> CHW
   return f
 
-# DECRAP rmbad
-@debug.timeit
+# DECRAP rmbad?
 def loss_per_point(b, lossf, kernel=15, exclude=[]):
   loss = lossf.__class__(reduction='none')(*[torch.tensor(x) for x in [b.y, b.z]])
   p2L = np.zeros(len(b.l))

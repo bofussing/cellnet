@@ -7,16 +7,18 @@
 experiments = dict(
   default =     ('default', True), 
   draft =       ('draft', True),
-  architecures = ('model_architecture', ['Unet', 'UnetPlusPlus']),
+  architecture = ('model_architecture', ['smp.Unet', 'smp.Unet:deep', 'smp.Unet:attention', 'smp.UnetPlusPlus']),
+  encoder =     ('model_encoder', ['resnet34', 'resnext50_32x4d', 'timm-resnest50d', 'timm-res2net50_26w_4s', 'timm-regnetx_064', 'timm-gernet_l', 'se_resnext50_32x4d', 'timm-skresnext50_32x4d', 'densenet161', 'xception', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'dpn68b', 'vgg19_bn', 'mit_b2', 'mobileone_s4']),
   xnorm_per_channel = ('xnorm_type', 'image_per_channel'),
-##  rmbad =       ('rmbad', 0.1), ## DECRAP
-  loss =        ('lossf', ['MSE','BCE', 'KLD', 'MSE+BCE', 'MSE+BCE+KLD']),  # , 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
+##  rmbad =       ('rmbad', 0.1), ## DECRAP?
+  loss =        ('lossf', ['MSE','BCE', 'MSE+BCE']), # 'KLD', 'MSE+BCE+KLD', 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
   # TODO: if linearcomb is better, then grid search weight
   sigma =       ('sigma', [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]),
   fraction =    ('fraction', [0.1, 0.25, 0.5, 0.75, 0.875, 1.0]),
   sparsity =    ('sparsity', [0.1, 0.25, 0.5, 0.75, 0.875, 1.0]),
 )
 
+from json import decoder
 from cellnet import data
 import pandas as pd
 
@@ -52,7 +54,8 @@ else: #MODE=='crossval':
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  cropsize=256,
+  cropsize=512,
+  batch_size=4,
   data_splits=data_splits,
   device=f'{device}',
   epochs=351,
@@ -63,7 +66,7 @@ CFG = obj(**(dict(
   lr_steps=2.5,
   maxdist=26, 
   MODE=MODE,
-  model_architecture='Unet',
+  model_architecture='smp.Unet',
   model_encoder='resnet152',
   param=P,
   rmbad=0,
@@ -91,16 +94,7 @@ from statistics import mean, stdev
 from cellnet.data import *
 import cellnet.plot as plot
 import cellnet.debug as debug
-
-key2text = {'tl': 'Training Loss',     'vl': 'Validation Loss', 
-            'ta': 'Training Accuracy', 'va': 'Validation Accuracy', 
-            'ti': 'Training Image',    'vi': 'Validation Image',
-            'bs': 'Batch Size',        'b' : 'Minibatches',       
-            'e' : 'Epoch',             'lr': 'Learning Rate',
-            'lossf': 'Loss Function',  'rmbad': 'Prop. of Difficult Labels Removed',
-            'fraction': 'Fraction of Data',  'sparsity': 'Artificial Sparsity',  
-            'sigma': 'Gaussian Sigma',        'maxdist': 'Max Distance',
-            }
+from cellnet.data import key2text
 
 # save the config to disk
 with open('cfg.json', 'w') as f:  f.write(json.dumps(CFG.__dict__, indent=2))
@@ -163,18 +157,23 @@ plt.close('all')
 
 import segmentation_models_pytorch as smp
 
-mk_mk_model = lambda cls: lambda: cls(
+mk_mk_model_smp = lambda cls, encoder_depth=5, **args: lambda: cls(
   encoder_name=CFG.model_encoder, 
   encoder_weights=None,
   in_channels=3,
   classes=1,
   activation='sigmoid',
+  encoder_depth=encoder_depth,
+  decoder_channels=[16*2**d for d in range(encoder_depth)],
+  **args
 ).to(device)
 
-mk_model = dict(
-  Unet = mk_mk_model(smp.Unet),
-  UnetPlusPlus = mk_mk_model(smp.UnetPlusPlus),
-)[CFG.model_architecture]
+mk_model = {
+  'smp.Unet': mk_mk_model_smp(smp.Unet),
+  'smp.Unet:attention': mk_mk_model_smp(smp.Unet, decoder_attention_type='scse'),
+  'smp.Unet:deep': mk_mk_model_smp(smp.Unet, encoder_depth=8),
+  'smp.UnetPlusPlus': mk_mk_model_smp(smp.UnetPlusPlus),
+}.__getitem__
 
 # %% # Train 
 
@@ -206,12 +205,11 @@ def epoch(model, kp2hm, lossf, dl, optim=None):
 results = pd.DataFrame()
 if not MODE=='draft': [os.makedirs(_p, exist_ok=True) for _p in ('preds', 'plots')]
 
-def training_run(cfg, traindl, valdl, kp2hm, model=None):
+def training_run(cfg, traindl, valdl, kp2hm, model):
   global results  
   p = cfg.__dict__[P]
   ti = cfg.ti; vi = cfg.vi
 
-  if model is None: model = mk_model()
   optim = torch.optim.Adam(model.parameters(), lr=5e-3)
   sched = torch.optim.lr_scheduler.StepLR(optim, step_size=int(cfg.epochs/cfg.lr_steps)+1, gamma=cfg.lr_gamma)
   losses = dict(
@@ -231,7 +229,11 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
     log.loc[e,'lr'] = optim.param_groups[0]['lr']
   
     model.train()
-    log.loc[e,'tl'], log.loc[e,'ta'] = epoch(model, kp2hm, lossf, traindl, optim)
+    try:
+      log.loc[e,'tl'], log.loc[e,'ta'] = epoch(model, kp2hm, lossf, traindl, optim)
+    except torch.cuda.OutOfMemoryError as e: 
+      print("ERROR: CUDA OutOfMemoryError in forward pass (train.epoch). CFG:\n", json.dumps(cfg.__dict__, indent=2))
+      raise e
     sched.step() 
   
     if valdl is not None: 
@@ -245,8 +247,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
   row = dict(**{P: p}, ti=ti, vi=vi, **log.iloc[-1])
 
   # compute loss distributions for a few batches 
-  # NOTE is very inefficient since we already do it once with BS 16, which should suffice.. now again n_batches*16 times..
-
+  # NOTE DUPLICATE COMPUTATIOM is very inefficient since we already do it once batch_size times, which should suffice.. now again n_batches*batch_size times..
   @debug.timeit
   def evaluate_performance():
     tvla = 'tl vl ta va'.split(' ')
@@ -265,27 +266,32 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
 
   results = pd.DataFrame([row]) if results.empty else pd.concat([results, pd.DataFrame([row])], ignore_index=True)
 
-
-  i2p2L = {}
-  # plot and save predictions to disk
-  for ii, t in [(ti, 'T'), (vi, 'V')]:
-    for i in ii:
+  # DECRAP rmbad?
+  @debug.timeit
+  def loss_per_point_per_image():
+    i2p2L = {}
+    for i in vi: # only save the point losses for the validation image 
       B = next(iter(mk_loader([i], bs=1, transforms=mkAugs('test'), shuffle=False, cfg=cfg)))
-
+      model.eval()
+      with torch.no_grad(): y = cpu(model(B['image'].to(device)))
+      B = batch2cpu(B, z=kp2hm(B), y=y)[0]
+      i2p2L[i] = data.loss_per_point(B, lossf, kernel=15, exclude=[2])
+      #np.save(f'p2L-{imgid(i)}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
+      #print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
+    return i2p2L
+  i2p2L = loss_per_point_per_image() if 'rmbad' in cfg.__dict__ and cfg.rmbad != 0 else {}
+  
+  # NOTE DUPLICATE COMPUTATIOM partial overlap with evaluate_performance
+  @debug.timeit
+  def plot_preds():
+    # plot and save predictions to disk
+    for i in ti+vi:
+      B = next(iter(mk_loader([i], bs=1, transforms=mkAugs('test'), shuffle=False, cfg=cfg)))
       model.eval()
       with torch.no_grad(): y = cpu(model(B['image'].to(device)))
       B = batch2cpu(B, z=kp2hm(B), y=y)[0]
 
-      # DECRAP everything with rmbad, p2L
-      if cfg.rmbad != 0: # get the badly predicted points and plot them
-        p2L = loss_per_point(B, lossf, kernel=15, exclude=[2])
-        if MODE=='release' or i in vi: 
-          i2p2L[i] = p2L  # only save the losses for the validation image 
-
-        #np.save(f'p2L-{imgid(i)}.npy', p2L)  # DEBUG dump p2L to disk for later analysis
-        #print(f'DEBUG: saved point losses for val image {i} (should happen only once per cfg and image)')
-
-      if (MODE=='release' or [imgid(_v) for _v in vi]==['QS_7510']) and (imgid(i) in ('1','QS_7510')):  # plot T=1 and V=QS_7510 for all [1,..]|[QS_7510,..] runs
+      if (MODE=='release' or (i in vi and i in crossval_vals)):  # plot all validation images (hopefully) once per CFG.param
         ax1 = plot.overlay(B.x, B.y, B.m, B.k, B.l, cfg.sigma) 
         ax2 = plot.diff   (B.y, B.z, B.m, B.k, B.l, cfg.sigma)
         ax3 = None
@@ -296,40 +302,43 @@ def training_run(cfg, traindl, valdl, kp2hm, model=None):
           ax3 = plot.image(B.x); plot.points(ax3, B.k, B.l)
           for a in (ax1, ax2, ax3):
             plot.points(a, B.k[rm], B.l[rm], colormap='#00ff00', lw=3)
-           
+            
         if not MODE=='draft': 
-          id = f"{P}={p}-{t}={imgid(i)}"
+          id = f"{P}={p}-{imgid(i)}" if type(ps) is list else imgid(i)
           #np.save(f'preds/{id}.npy', y)
           plot.save(ax1, f'plots/{id}.pred.png')
           plot.save(ax2, f'plots/{id}.diff.png')
-          if ax3 is not None: plot.save(ax3, f'plots/{id}.points.png')
+          if ax3 is not None: plot.save(ax3, f'plots/{id}.points.png')  # DECRAP rmbad?
           plt.close('all') # save but don't show
+  plot_preds()
 
-  return dict(model=model, log=log, i2p2L=i2p2L)
+  return log, i2p2L
 
 # mode == 2 => aka test augs => no cropping
 def get_loader(cfg, ti, vi):
-  loader = lambda m, ids: mk_loader(ids, bs = 1 if m==2 else 16, shuffle=False, cfg=cfg, transforms=mkAugs(m))
+  loader = lambda m, ids: mk_loader(ids, bs = 1 if m==2 else CFG.batch_size, shuffle=False, cfg=cfg, transforms=mkAugs(m))
   return [loader('train', ti), loader('val', vi) if vi is not None and len(vi)>0 else None]
 kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(CFG)
 
+model:torch.nn.Module = None # type: ignore
 _ps = ps if type(ps) is list else [ps]
 for p in [_ps[-1]] if MODE=='draft' else _ps:
   cfg = obj(**(CFG.__dict__ | {P: p}))
   if P in ['sigma']: kp2hm, yunnorm, _ymax = mk_kp2mh_yunnorm(cfg)
 
-  i2p2L = {}
-
+  i2p2L = {}  # DECRAP rmbad?
   for ti, vi in data_splits:
     cfg = obj(**(cfg.__dict__ | dict(ti=ti, vi=vi)))
 
     traindl, valdl = get_loader(cfg, ti, vi)
 
-    out = training_run(cfg, traindl, valdl, kp2hm)
-    i2p2L |= out['i2p2L'] # NOTE: overrides if image in multiple val sets
+    model = mk_model(cfg.model_architecture)()
+    log, _i2p2L = training_run(cfg, traindl, valdl, kp2hm, model)
+    i2p2L |= _i2p2L  # DECRAP rmbad # NOTE: overrides if image in multiple val sets  
+    if MODE!='release': del model
 
   # DECRAP
-  if cfg.rmbad != 0:  # remove the bad points and retrain
+  if 'rmbad' in cfg.__dict__ and cfg.rmbad != 0:  # remove the bad points and retrain
     keep = {i: np.argsort(-p2L)[int(len(p2L)*cfg.rmbad):] for i,p2L in i2p2L.items()} 
     
     for _i, k in keep.items(): print(f"DEBUG: keeping {len(k)} of {len(i2p2L[_i])} points for {_i}")
@@ -355,14 +364,16 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
       regen_masks(traindl)
       if valdl: regen_masks(valdl)
 
-      out = training_run(cfg, traindl, valdl, kp2hm, model=out['model'])  # type: ignore
+      model = mk_model(cfg.model_architecture)()   # inefficient to recreate the model but makes code a little simpler and more space safe
+      log, _i2p2L = training_run(cfg, traindl, valdl, kp2hm, model)
   
 # %%
+# TODO maybe modularize model saving so it can be used to cache models from different experiments from P:ps
 if MODE=='release': # save model to disk
   B = next(iter(mk_loader([CFG.image_paths[0]], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
   x = batch2cpu(B)[0].x[None]
   
-  m = out['model'] # type: torch.nn.Module # type: ignore 
+  m=model#type: ignore
   m.eval()
 
   # save a test in/out
@@ -382,29 +393,28 @@ if MODE=='release': # save model to disk
 
   with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
 
-
-# %% # save and plot results
-
-if not MODE=='draft':
-  from io import StringIO
-  import ast, csv
-
-  if type(results[P][0]) == str: results[P] = results[P].apply(lambda s: "'"+s+"'")
-  results.to_csv('results.csv', index=False, sep=';')
-
-    ## TODO those nans
-  with open('results.csv', 'r') as f:
-    nan = "0"
-    s = f.read().replace('nan', nan).replace('NaN', nan).strip()
-    while ";;"  in s: s = s.replace(";;", ";"+nan+";")
-    while ";\n" in s: s = s.replace(";\n", ";"+nan+"\n")
-    while "\n;" in s: s = s.replace("\n;", "\n"+nan+";")
-    if s[-1] == ";": s = s + nan
-    if s[0] == ";": s = nan + s
-
-  cols = pd.read_csv(StringIO(s), sep=';').columns
-  R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
-  R.rename(columns=dict(vi=key2text['vi']), inplace=True)
-  plot.regplot(R, P, key2text)
+if type(results[P][0]) == str: results[P] = results[P].apply(lambda s: "'"+s+"'")
+results.to_csv('results.csv', index=False, sep=';')
 
 debug.print_times()
+
+# %% # independently load and plot results
+from cellnet import plot
+from cellnet.data import key2text
+from io import StringIO
+import ast, csv, pandas as pd
+
+## TODO those nans
+with open('results.csv', 'r') as f:
+  nan = "0"
+  s = f.read().replace('nan', nan).replace('NaN', nan).strip()
+  while ";;"  in s: s = s.replace(";;", ";"+nan+";")
+  while ";\n" in s: s = s.replace(";\n", ";"+nan+"\n")
+  while "\n;" in s: s = s.replace("\n;", "\n"+nan+";")
+  if s[-1] == ";": s = s + nan
+  if s[0] == ";": s = nan + s
+
+cols = pd.read_csv(StringIO(s), sep=';').columns
+R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
+R.rename(columns=dict(vi=key2text['vi']), inplace=True)
+plot.regplot(R, R.columns[0], key2text)

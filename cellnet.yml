@@ -21,7 +21,6 @@ dependencies:
 - pandas
 - scikit-image
 - colorcet
-- 
 
 - pytorch
 - pytorch-cuda

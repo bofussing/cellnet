@@ -126,20 +126,27 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
   plt.show()
 
 
-def regplot(data, dim, key2text):
+def regplot(data, dim, key2text, remove_outliers_below:None|float=0):
   import seaborn as sns
+  from cellnet.data import imgid
   data = data.explode(keys := ['ta', 'va', 'tl', 'vl'] )
   for key in keys: data[key] = data[key].apply(lambda x: float(x) if x != 'nan' else float('nan'))
   fig, axs = plt.subplots(2,2, figsize=(20,20*2/3))
+  by_val_img = data[key2text['vi']].apply(lambda vi: 
+    (_vi := [imgid(i) for i in vi], _vi[0] if len(_vi)==1 else ', '.join(_vi))[-1])
+  if remove_outliers_below is not None: 
+    for key in keys: 
+      fun = lambda dimval, vi, x: (print(f"NOTE: Outlier hidden at {dim}={dimval}, {key} = {x}"+(f" (vi: {vi})" if 'v' in dim else '')), remove_outliers_below)[-1] if x < remove_outliers_below else x
+      data[key] = data.apply(lambda row: fun(row[dim], row[key2text['vi']], row[key]), axis=1)
   for ax, key in zip(axs.flat, keys):
     try: 
       if len(data[dim].unique()) <= 1: raise Exception("Only one unique x-value.")
       sns.regplot(x=dim, y=key, data=data, scatter=False, ax=ax) 
-      sns.scatterplot(ax=ax, data=data, x=dim, y=key, hue=data[key2text['vi']].apply(lambda vi: vi[0] if len(vi)==1 else str(vi)))
+      sns.scatterplot(ax=ax, data=data, x=dim, y=key, hue=by_val_img)
     except Exception as e: 
       print(f"Log. Cannot plot regression {dim}-{key}, because {e.__class__.__name__}: {e}") 
       sns.violinplot(x=dim, y=key, data=data, ax=ax, orient='v', fill=False, inner="quart")
-      sns.swarmplot(ax=ax, data=data, x=dim, y=key, hue=data[key2text['vi']].apply(lambda vi: vi[0] if len(vi)==1 else str(vi)))
+      sns.swarmplot(ax=ax, data=data, x=dim, y=key, hue=by_val_img)
     dimtext = key2text[dim] if dim in key2text else f'{dim}'
     ax.set_title(f'{key2text[key]} vs {dimtext}')
     ax.set_xlabel(dimtext)
