@@ -32,8 +32,10 @@ INPUT="$OUTDIR/$NAME.py"
 mv "$OUTDIR/$INDIR/$NAME.py" "$INPUT"  2>/dev/null
 
 if [ "$MODE" == "sbatch" ]; then
-  sbatch -J "$EXPERIMENT" $SBATCH_ARGS bin/job-ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE"
+  out="$(sbatch -J "$EXPERIMENT" $SBATCH_ARGS bin/job-ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE")"
+  echo -e "\033[1;32m$out $NAME:$EXPERIMENT ($RELEASE_MODE) at $STARTTIME\033[0m"
 elif [ "$MODE" == "local" ]; then
+  echo -e "\033[1;32mRunning job in current node $NAME:$EXPERIMENT ($RELEASE_MODE) at $STARTTIME\033[0m"
   bin/job-ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE"
 else echo "Usage: run [remote [local|sbatch]|local|sbatch] INPUT EXPERIMENT RELEASE_MODE"; exit 1;
 fi
