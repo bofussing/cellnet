@@ -22,10 +22,7 @@ OUTDIR="./results/$INDIR/$NAME/$STARTTIME-$EXPERIMENT"
 if [ "$RELEASE_MODE" != "" ]; then OUTDIR="$OUTDIR-$RELEASE_MODE"; fi
 OUTDIR="$OUTDIR-RUNNING"
 
-echo -e "  ===  PREPARING BATCHJOB $INPUT at $STARTTIME ===  \n"
-
 mkdir -p "$OUTDIR"
-
 rsync -a "." "$OUTDIR" --exclude .git --exclude results
 
 INPUT="$OUTDIR/$NAME.py"

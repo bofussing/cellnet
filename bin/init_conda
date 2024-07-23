@@ -1,9 +1,6 @@
 #!/bin/bash
 source bin/init_shell
 
-ENV=$1
-
-
 if type micromamba > /dev/null; then 
   conda=micromamba
   $conda shell init --shell=bash                     >/dev/null
@@ -19,6 +16,3 @@ elif type conda      > /dev/null; then
 else echo "WARN No micromamba, mamba or conda found."; fi
 
 export conda="$conda"
-
-
-$conda activate "$ENV"

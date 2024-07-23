@@ -6,7 +6,8 @@ conda="micromamba"
 $conda shell init --shell=bash                     >/dev/null
 eval "$($conda shell hook --shell=bash)"           >/dev/null 
 
-bin/init_conda cellnet_release
+source bin/init_conda 
+$conda activate cellnet_release
 
 pip uninstall -y cellnet
 rm -rf ~/.cache/cellnet/model-*.zip

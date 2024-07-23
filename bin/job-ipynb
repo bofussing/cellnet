@@ -22,7 +22,8 @@ echo -e "  ===  RUNNING $INDIR/$NAME ($EXPERIMENT) at $(date) ===  "
 
 nvidia-smi
 
-bin/init_conda "$ENV" || bin/init_conda cellnet
+source bin/init_conda 
+$conda activate "$ENV" || $conda activate cellnet
 
 
 TIMESTAMPFILE="$OUTDIR/TIMESTAMP"
