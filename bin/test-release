@@ -1,12 +1,13 @@
 #!/bin/bash
 
-testimage=${1:-data/1.jpg}
+testimage=${1:-data/images/1.jpg}
 
 conda="micromamba"
 $conda shell init --shell=bash                     >/dev/null
 eval "$($conda shell hook --shell=bash)"           >/dev/null 
 
-$conda activate cellnet_release
+bin/init_conda cellnet_release
+
 pip uninstall -y cellnet
 rm -rf ~/.cache/cellnet/model-*.zip
 rm -rf ~/.cache/cellnet/model_export

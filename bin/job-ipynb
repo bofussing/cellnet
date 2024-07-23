@@ -1,14 +1,13 @@
 #!/bin/bash
 #SBATCH -J ipynb
-#SBATCH -t 12:00:00
+#SBATCH -o _____________%j-RUNNING
 #SBATCH --ntasks=1
-#SBATCH --mem=40G
+#SBATCH -t 12:00:00
 #SBATCH --cpus-per-task=8
+#SBATCH --mem=40G
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:tesla:1
-#SBATCH --mail-user=eckhardt
-#SBATCH -A revvity
-#SBATCH -o _____________%j-RUNNING
+# NOTE: adapt these to your HPC
 
 
 NAME="$1"; INDIR="$2"; INPUT="$3"; OUTDIR="$4"; EXPERIMENT="$5"; RELEASE_MODE="$6"
@@ -23,10 +22,7 @@ echo -e "  ===  RUNNING $INDIR/$NAME ($EXPERIMENT) at $(date) ===  "
 
 nvidia-smi
 
-conda=micromamba
-$conda shell init --shell=bash                     >/dev/null
-eval "$($conda shell hook --shell=bash)"           >/dev/null 
-$conda activate "$ENV" || $conda activate cellnet  >/dev/null
+bin/init_conda "$ENV" || bin/init_conda cellnet
 
 
 TIMESTAMPFILE="$OUTDIR/TIMESTAMP"
