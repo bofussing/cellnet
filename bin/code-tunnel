@@ -6,7 +6,8 @@ ssh "$HPC_HOST" <<SSH
     mkdir -p ~/.local/bin
     curl -Lk 'https://code.visualstudio.com/sha/download?build=stable&os=cli-alpine-x64' |
       tar -xz -C ~/.local/bin
-    echo "NOTE: Ensure PATH contains ~/.local/bin. Eg with:  echo 'export PATH=~/.local/bin:\"\$PATH\"' >> ~/.bashrc"
+    echo "Installed VSCode to ~/.local/bin"
+    echo "NOTE: Ensure PATH contains ~/.local/bin  Eg with:  echo 'export PATH=~/.local/bin:\"\$PATH\"' >> ~/.bashrc"
   fi
   srun --time 6:00:00 $SBATCH_ARGS code tunnel --accept-server-license-terms
 SSH
