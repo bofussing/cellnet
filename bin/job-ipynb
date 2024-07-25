@@ -3,11 +3,6 @@
 #SBATCH -o _____________%j-RUNNING
 #SBATCH --ntasks=1
 #SBATCH -t 12:00:00
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=40G
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:tesla:1
-# NOTE: adapt these to your HPC
 
 
 NAME="$1"; INDIR="$2"; INPUT="$3"; OUTDIR="$4"; EXPERIMENT="$5"; RELEASE_MODE="$6"
@@ -27,11 +22,13 @@ $conda activate "$ENV" || $conda activate cellnet
 
 
 TIMESTAMPFILE="$OUTDIR/TIMESTAMP"
-touch "$TIMESTAMPFILE"
+echo "$SLURM_JOBID" > "$TIMESTAMPFILE"
 SECONDS=0
 
 export EXPERIMENT="$EXPERIMENT"
 export RELEASE_MODE="$RELEASE_MODE"
+
+# TODO: monitor peak GPU usage during execution so that we can optimize the memory requirements
 jupytext --to notebook --execute -o "$OUTDIR/$NAME.ipynb" "$INPUT"
 
 duration="$SECONDS"
@@ -43,8 +40,8 @@ find "$OUTDIR" ! -newer "$TIMESTAMPFILE" ! -wholename "$TIMESTAMPFILE" ! -wholen
 find "$OUTDIR" -name '*.pyc' -delete 2>/dev/null
 find "$OUTDIR" -depth -type d -empty -delete 2>/dev/null
 rm -rf "$OUTDIR/.cache"
-rm "$TIMESTAMPFILE"
-
 mv "_____________$SLURM_JOBID-RUNNING" "$OUTDIR/$SLURM_JOBID-$RUNTIME.log"
-
+rm "$TIMESTAMPFILE"
 mv "$OUTDIR" "${OUTDIR%"-RUNNING"}"
+# TODO: label failed jobs as failed
+# TODO: label aborted jobs

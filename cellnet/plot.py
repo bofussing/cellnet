@@ -19,6 +19,10 @@ def set_zoom(zoom):
   ZOOM = zoom
 
 
+import pathlib
+def imgid(path): return pathlib.Path(path).stem
+
+
 def heatmap(hm, ax=None, alpha=lambda value: value, color='#ff0000'):
   """Overlay heatmap on image. Color cam be color or color map. Alpha: map value to transparency."""
   from matplotlib.colors import Colormap, ListedColormap 
@@ -101,7 +105,8 @@ def save(ax, path, transparent=False):
   ax.figure.savefig(path, transparent=transparent, pil_kwargs=dict(compress_level=9))
 
 
-def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accuracy=True, **unknown):
+# TODO use seaborn and overlay KDE to easier see progress despite noise
+def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accuracy=True, vi=[], **unknown):
   if clear: 
     from IPython.display import clear_output
     clear_output(wait=True)
@@ -111,7 +116,9 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
   if not accuracy: axs = [axs]
 
   for ax, T in zip(axs, ['Loss', 'Accuracy']):
-    ax.set_title(f"Training {T}\n{', '.join([f'{key2text.get(k, k)}: {v}' for k,v in [('e', epochs), *info.items()]])}")
+    title = f"Training {T}\nvi: {', '.join([imgid(i) for i in vi])}. {', '.join([f'{key2text.get(k, k)}: {v}' for k,v in [('e', epochs), *info.items()]])}"
+    ax.set_title(title)
+    print(title)
 
   for key in (log if keys is None else keys):
     if key in "lr tl vl".split(' '): ax = axs[0]
@@ -126,25 +133,27 @@ def train_graph(epochs, log, keys=None, clear=False, info={}, key2text={}, accur
   plt.show()
 
 
-def regplot(data, dim, key2text, remove_outliers_below:None|float=0):
+def regplot(data, dim, key2text, remove_outliers_below:None|float=0, sort_by='va_mean'):
   import seaborn as sns
   from cellnet.data import imgid
+  if sort_by is not None: data = data.sort_values(by=[sort_by], ascending=True).reset_index(drop=True)
   data = data.explode(keys := ['ta', 'va', 'tl', 'vl'] )
   for key in keys: data[key] = data[key].apply(lambda x: float(x) if x != 'nan' else float('nan'))
-  fig, axs = plt.subplots(2,2, figsize=(20,20*2/3))
   by_val_img = data[key2text['vi']].apply(lambda vi: 
     (_vi := [imgid(i) for i in vi], _vi[0] if len(_vi)==1 else ', '.join(_vi))[-1])
   if remove_outliers_below is not None: 
     for key in keys: 
-      fun = lambda dimval, vi, x: (print(f"NOTE: Outlier hidden at {dim}={dimval}, {key} = {x}"+(f" (vi: {vi})" if 'v' in dim else '')), remove_outliers_below)[-1] if x < remove_outliers_below else x
+      fun = lambda dimval, vi, x: (print(f"NOTE: Outlier hidden at {dim}={dimval}, {key} = {x}"+(f" (vi: {vi})")), remove_outliers_below)[-1] if x < remove_outliers_below else x
       data[key] = data.apply(lambda row: fun(row[dim], row[key2text['vi']], row[key]), axis=1)
-  for ax, key in zip(axs.flat, keys):
+
+  axs = [plt.subplots(1,1, figsize=(10*(golden := (1 + 5 ** 0.5) / 2),10))[1] for _ in range(4)]
+  for ax, key in zip(axs, keys):
     try: 
       if len(data[dim].unique()) <= 1: raise Exception("Only one unique x-value.")
       sns.regplot(x=dim, y=key, data=data, scatter=False, ax=ax) 
       sns.scatterplot(ax=ax, data=data, x=dim, y=key, hue=by_val_img)
     except Exception as e: 
-      print(f"Log. Cannot plot regression {dim}-{key}, because {e.__class__.__name__}: {e}") 
+      print(f"Log. Cannot plot regression {dim}-{key}, likely because the variables are categorical and not numerical. ({e})") 
       sns.violinplot(x=dim, y=key, data=data, ax=ax, orient='v', fill=False, inner="quart")
       sns.swarmplot(ax=ax, data=data, x=dim, y=key, hue=by_val_img)
     dimtext = key2text[dim] if dim in key2text else f'{dim}'
@@ -152,3 +161,5 @@ def regplot(data, dim, key2text, remove_outliers_below:None|float=0):
     ax.set_xlabel(dimtext)
     ax.set_ylabel(key2text[key])
     sns.move_legend(ax, "lower left")
+    # make the x-axis text readable
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right')

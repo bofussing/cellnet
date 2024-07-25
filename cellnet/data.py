@@ -114,7 +114,7 @@ class CellnetDataset(torch.utils.data.Dataset):
       if q['annotation_status'] in ('fully', 'empty'): 
         self.M[i] = np.ones_like(self.M[i])
         print(f"INFO: Because {i} is fully annotated or purposefully empty, fgmask is set to 1")
-      elif q['fgmask_status'] != "ok": 
+      elif q['fgmask_status'] != "OK": 
         raise Exception(f"ERROR: {i} has fgmask_status {q['fgmask_status']}!=ok, but is not fully annotated. Don't know what to do with this image currently. Please fix or exclude from image_paths")
 
     if (f:=fraction) < 1.0: 

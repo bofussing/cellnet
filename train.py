@@ -6,9 +6,21 @@
 # after experiment successful, summarize findings in respective ipynb and integrate into defaults
 experiments = dict(
   default =     ('default', True), 
-  draft =       ('draft', True),
-  architecture = ('model_architecture', ['smp.Unet', 'smp.Unet:deep', 'smp.Unet:attention', 'smp.UnetPlusPlus']),
-  encoder =     ('model_encoder', ['resnet34', 'resnext50_32x4d', 'timm-resnest50d', 'timm-res2net50_26w_4s', 'timm-regnetx_064', 'timm-gernet_l', 'se_resnext50_32x4d', 'timm-skresnext50_32x4d', 'densenet161', 'xception', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'dpn68b', 'vgg19_bn', 'mit_b2', 'mobileone_s4']),
+  draft =       ('epochs', 2),
+  
+  release1 =    ('release1', True),
+  release1n =    ('release1n', True),
+  release2 =    ('release2', True),
+  release2n =    ('release2n', True),
+  release3 =    ('release3', True),
+  release3n =    ('release3n', True),
+  release4 =    ('release4', True),
+  release4n =    ('release4n', True),
+
+  architecture = ('model_architecture', ['smp.Unet', 'smp.Unet:attention', 'smp.UnetPlusPlus']),  # NOTE: 'smp.Unet:deeper' fails, likely due to a bug in smp :[
+  encoder_all =     ('model_encoder', ['resnet34', 'resnext50_32x4d', 'timm-resnest50d', 'timm-res2net50_26w_4s', 'timm-regnetx_064', 'timm-gernet_l', 'se_resnext50_32x4d', 'timm-skresnext50_32x4d', 'densenet161', 'xception', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'dpn68b', 'vgg19_bn', 'mit_b2', 'mobileone_s4']),
+  encoder_adaptedbestsmall =     ('model_encoder', ['resnet152', 'resnet34', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'timm-resnest50d', 'xception', 'vgg19_bn']),
+  encoder_big = ('model_encoder', ['resnet152', 'timm-efficientnet-l2', 'timm-efficientnet-b8', 'timm-mobilenetv3_large_100', 'timm-resnest200e', 'timm-resnest269e', 'inceptionresnetv2', 'inceptionv4', 'xception', 'vgg19_bn']),
   xnorm_per_channel = ('xnorm_type', 'image_per_channel'),
 ##  rmbad =       ('rmbad', 0.1), ## DECRAP?
   loss =        ('lossf', ['MSE','BCE', 'MSE+BCE']), # 'KLD', 'MSE+BCE+KLD', 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
@@ -25,7 +37,7 @@ import pandas as pd
 data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
 
 image_paths = [i for i in data.ls('data/images') if data_quality.loc[data.imgid(i), 'annotation_status'] in ('fully', 'sparse', 'empty')]
-crossval_vals = '1 | QS_7510 | QS_7415'
+crossval_vals = '1 | 2 | QS_7510'# | QS_7415' # NOTE that with the empty image the accuracy formula breaks
 
 
 import os, torch, json
@@ -54,20 +66,20 @@ else: #MODE=='crossval':
 
 CFG = obj(**(dict(
   EXPERIMENT=EXPERIMENT,
-  cropsize=512,
-  batch_size=4,
+  cropsize=256,
+  batch_size=16,
   data_splits=data_splits,
   device=f'{device}',
   epochs=351,
   fraction=1, 
   image_paths=image_paths,
-  lossf='MSE',
+  lossf='MSE+BCE',
   lr_gamma=0.1,
   lr_steps=2.5,
   maxdist=26, 
   MODE=MODE,
-  model_architecture='smp.Unet',
-  model_encoder='resnet152',
+  model_architecture='smp.UnetPlusPlus:attention',
+  model_encoder='timm-mobilenetv3_large_100',
   param=P,
   rmbad=0,
   sigma=5.0,  # NOTE: do grid search again later when better convergence 
@@ -75,6 +87,35 @@ CFG = obj(**(dict(
   xnorm_params={},
   xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
   ) | {P: ps[-1] if type(ps) is list else ps}))
+
+# NOTE quick hacks
+if MODE=='release': 
+  CFG.epochs=501
+
+match EXPERIMENT:
+  case 'release1':
+    CFG.model_encoder = 'timm-mobilenetv3_large_100'
+
+  case 'release1n':
+    CFG.model_encoder = 'timm-mobilenetv3_large_100'
+    CFG.xnorm_type = 'image_per_channel'
+
+  case 'release2':
+    CFG.model_encoder = 'timm-efficientnet-l2'
+    CFG.cropsize = 256
+
+  case 'release2n':
+    CFG.model_encoder = 'timm-efficientnet-l2'
+    CFG.xnorm_type = 'image_per_channel'
+    CFG.cropsize = 256
+
+  case 'release3':
+    CFG.model_encoder = 'timm-efficientnet-b8'
+  
+  case 'release3n':
+    CFG.model_encoder = 'timm-efficientnet-b8'
+    CFG.xnorm_type = 'image_per_channel'
+
 
 if 'draft' in CFG.__dict__ and CFG.draft is True: 
   CFG.epochs = 2
@@ -157,8 +198,8 @@ plt.close('all')
 
 import segmentation_models_pytorch as smp
 
-mk_mk_model_smp = lambda cls, encoder_depth=5, **args: lambda: cls(
-  encoder_name=CFG.model_encoder, 
+mk_mk_model_smp = lambda cls, encoder_depth=5, **args: lambda cfg: cls(
+  encoder_name=cfg.model_encoder, 
   encoder_weights=None,
   in_channels=3,
   classes=1,
@@ -168,12 +209,13 @@ mk_mk_model_smp = lambda cls, encoder_depth=5, **args: lambda: cls(
   **args
 ).to(device)
 
-mk_model = {
+mk_model = lambda c: {
   'smp.Unet': mk_mk_model_smp(smp.Unet),
   'smp.Unet:attention': mk_mk_model_smp(smp.Unet, decoder_attention_type='scse'),
-  'smp.Unet:deep': mk_mk_model_smp(smp.Unet, encoder_depth=8),
+  'smp.Unet:deeper': mk_mk_model_smp(smp.Unet, encoder_depth=6),
   'smp.UnetPlusPlus': mk_mk_model_smp(smp.UnetPlusPlus),
-}.__getitem__
+  'smp.UnetPlusPlus:attention': mk_mk_model_smp(smp.UnetPlusPlus, decoder_attention_type='scse'),
+}[c.model_architecture]
 
 # %% # Train 
 
@@ -229,17 +271,13 @@ def training_run(cfg, traindl, valdl, kp2hm, model):
     log.loc[e,'lr'] = optim.param_groups[0]['lr']
   
     model.train()
-    try:
-      log.loc[e,'tl'], log.loc[e,'ta'] = epoch(model, kp2hm, lossf, traindl, optim)
-    except torch.cuda.OutOfMemoryError as e: 
-      print("ERROR: CUDA OutOfMemoryError in forward pass (train.epoch). CFG:\n", json.dumps(cfg.__dict__, indent=2))
-      raise e
+    log.loc[e,'tl'], log.loc[e,'ta'] = epoch(model, kp2hm, lossf, traindl, optim)
     sched.step() 
   
     if valdl is not None: 
       model.eval()
       with torch.no_grad():
-        log.loc[e,'vl'], log.loc[e,'va'] =epoch(model, kp2hm, lossf, valdl) 
+        log.loc[e,'vl'], log.loc[e,'va'] = epoch(model, kp2hm, lossf, valdl) 
 
     if MODE=='draft': plot.train_graph(e, log, info={P: p}, key2text=key2text, clear=True)
   plot.train_graph(cfg.epochs, log, info={P: p}, key2text=key2text, accuracy=False) 
@@ -291,7 +329,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model):
       with torch.no_grad(): y = cpu(model(B['image'].to(device)))
       B = batch2cpu(B, z=kp2hm(B), y=y)[0]
 
-      if (MODE=='release' or (i in vi and i in crossval_vals)):  # plot all validation images (hopefully) once per CFG.param
+      if (MODE=='release' or (i in vi)):  # plot all validation images (hopefully) once per CFG.param
         ax1 = plot.overlay(B.x, B.y, B.m, B.k, B.l, cfg.sigma) 
         ax2 = plot.diff   (B.y, B.z, B.m, B.k, B.l, cfg.sigma)
         ax3 = None
@@ -303,7 +341,7 @@ def training_run(cfg, traindl, valdl, kp2hm, model):
           for a in (ax1, ax2, ax3):
             plot.points(a, B.k[rm], B.l[rm], colormap='#00ff00', lw=3)
             
-        if not MODE=='draft': 
+        if  MODE!='draft': 
           id = f"{P}={p}-{imgid(i)}" if type(ps) is list else imgid(i)
           #np.save(f'preds/{id}.npy', y)
           plot.save(ax1, f'plots/{id}.pred.png')
@@ -332,8 +370,25 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
 
     traindl, valdl = get_loader(cfg, ti, vi)
 
-    model = mk_model(cfg.model_architecture)()
-    log, _i2p2L = training_run(cfg, traindl, valdl, kp2hm, model)
+    match cfg.model_encoder:
+      case 'timm-efficientnet-b5': 
+        cfg.lr_steps = 1.5	
+      case 'timm-mobilenetv3_large_100': 
+        cfg.lr_steps = 1.5
+        cfg.lr_gamma = 0.2
+      case 'timm-resnest50d':
+        cfg.lr_steps = 1.5
+      case 'xception':
+        cfg.lr_steps = 1.5
+      case 'vgg19_bn':
+        cfg.lr_steps = 1.5
+
+    model = mk_model(cfg)(cfg)
+    try:
+      log, _i2p2L = training_run(cfg, traindl, valdl, kp2hm, model)
+    except Exception as e: 
+      print(f"ERROR: Exception {e.__class__.__name__} in model training (train.training_run). CFG:\n", json.dumps(cfg.__dict__, indent=2))
+      raise e
     i2p2L |= _i2p2L  # DECRAP rmbad # NOTE: overrides if image in multiple val sets  
     if MODE!='release': del model
 
@@ -364,7 +419,7 @@ for p in [_ps[-1]] if MODE=='draft' else _ps:
       regen_masks(traindl)
       if valdl: regen_masks(valdl)
 
-      model = mk_model(cfg.model_architecture)()   # inefficient to recreate the model but makes code a little simpler and more space safe
+      model = mk_model(cfg)(cfg)   # inefficient to recreate the model but makes code a little simpler and more space safe
       log, _i2p2L = training_run(cfg, traindl, valdl, kp2hm, model)
   
 # %%
@@ -378,18 +433,13 @@ if MODE=='release': # save model to disk
 
   # save a test in/out
   #os.makedirs(cachedir:=os.path.expanduser('~/.cache/cellnet'), exist_ok=True)
-  np.save('./model_export_test_x_1.npy', x)
-  np.save('./model_export_test_y_1.npy', cpu(m(gpu(x, device=device))))
+  #np.save('./model_export_test_x_1.npy', x)
+  #np.save('./model_export_test_y_1.npy', cpu(m(gpu(x, device=device))))
 
   m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
   os.remove('./model_export/README.md')
 
-  # convert all ndarray to list for json serialization
-  def rec_dict_array2list(d):
-    for k,v in d.items():
-      if isinstance(v, dict): rec_dict_array2list(v)
-      if isinstance(v, np.ndarray): d[k] = v.tolist()
-  settings = rec_dict_array2list(CFG.__dict__ | {'ymax':float(_ymax)})
+  settings = (CFG.__dict__ | {'ymax':float(_ymax)})
 
   with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
 
@@ -399,22 +449,23 @@ results.to_csv('results.csv', index=False, sep=';')
 debug.print_times()
 
 # %% # independently load and plot results
-from cellnet import plot
-from cellnet.data import key2text
-from io import StringIO
-import ast, csv, pandas as pd
+if MODE != 'release':  # HACK, fix this
+  from cellnet import plot
+  from cellnet.data import key2text
+  from io import StringIO
+  import ast, csv, pandas as pd
 
-## TODO those nans
-with open('results.csv', 'r') as f:
-  nan = "0"
-  s = f.read().replace('nan', nan).replace('NaN', nan).strip()
-  while ";;"  in s: s = s.replace(";;", ";"+nan+";")
-  while ";\n" in s: s = s.replace(";\n", ";"+nan+"\n")
-  while "\n;" in s: s = s.replace("\n;", "\n"+nan+";")
-  if s[-1] == ";": s = s + nan
-  if s[0] == ";": s = nan + s
+  ## TODO those nans
+  with open('results.csv', 'r') as f:
+    nan = "0"
+    s = f.read().replace('nan', nan).replace('NaN', nan).strip()
+    while ";;"  in s: s = s.replace(";;", ";"+nan+";")
+    while ";\n" in s: s = s.replace(";\n", ";"+nan+"\n")
+    while "\n;" in s: s = s.replace("\n;", "\n"+nan+";")
+    if s[-1] == ";": s = s + nan
+    if s[0] == ";": s = nan + s
 
-cols = pd.read_csv(StringIO(s), sep=';').columns
-R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
-R.rename(columns=dict(vi=key2text['vi']), inplace=True)
-plot.regplot(R, R.columns[0], key2text)
+  cols = pd.read_csv(StringIO(s), sep=';').columns
+  R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
+  R.rename(columns=dict(vi=key2text['vi']), inplace=True)
+  plot.regplot(R, R.columns[0], key2text)
