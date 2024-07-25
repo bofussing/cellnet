@@ -1,0 +1,68 @@
+{
+  "EXPERIMENT": "fraction",
+  "image_paths": [
+    "data/images/1.jpg",
+    "data/images/2.jpg",
+    "data/images/4.jpg",
+    "data/images/QS_7415.jpg",
+    "data/images/QS_7506.jpg",
+    "data/images/QS_7508.jpg",
+    "data/images/QS_7510.jpg"
+  ],
+  "cropsize": 256,
+  "data_splits": [
+    [
+      [
+        "data/images/1.jpg",
+        "data/images/2.jpg",
+        "data/images/4.jpg",
+        "data/images/QS_7506.jpg",
+        "data/images/QS_7508.jpg"
+      ],
+      [
+        "data/images/QS_7415.jpg",
+        "data/images/QS_7510.jpg"
+      ]
+    ],
+    [
+      [
+        "data/images/1.jpg",
+        "data/images/QS_7415.jpg",
+        "data/images/QS_7506.jpg",
+        "data/images/QS_7508.jpg",
+        "data/images/QS_7510.jpg"
+      ],
+      [
+        "data/images/2.jpg",
+        "data/images/4.jpg"
+      ]
+    ],
+    [
+      [
+        "data/images/1.jpg",
+        "data/images/2.jpg",
+        "data/images/QS_7415.jpg",
+        "data/images/QS_7506.jpg",
+        "data/images/QS_7508.jpg"
+      ],
+      [
+        "data/images/4.jpg",
+        "data/images/QS_7510.jpg"
+      ]
+    ]
+  ],
+  "device": "cuda:0",
+  "epochs": 351,
+  "fraction": 0.1,
+  "lossf": "MSE",
+  "lr_gamma": 0.1,
+  "lr_steps": 2.5,
+  "maxdist": 26,
+  "MODE": "crossval",
+  "param": "fraction",
+  "rmbad": 0,
+  "sigma": 5.0,
+  "sparsity": 1,
+  "xnorm_params": {},
+  "xnorm_type": "imagenet"
+}

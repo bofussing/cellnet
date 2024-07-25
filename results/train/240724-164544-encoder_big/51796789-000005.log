@@ -1,0 +1,160 @@
+  ===  RUNNING ./train:encoder_big () at Wed Jul 24 16:46:00 EEST 2024 ===  
+Wed Jul 24 16:46:00 2024       
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 545.23.08              Driver Version: 545.23.08    CUDA Version: 12.3     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  NVIDIA A100-SXM4-80GB          Off | 00000000:0A:00.0 Off |                    0 |
+| N/A   29C    P0              59W / 400W |      4MiB / 81920MiB |      0%      Default |
+|                                         |                      |             Disabled |
++-----------------------------------------+----------------------+----------------------+
+                                                                                         
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|  No running processes found                                                           |
++---------------------------------------------------------------------------------------+
+[jupytext] Reading ./results/./train/240724-164544-encoder_big-RUNNING/train.py in format py
+[jupytext] Setting kernel python3
+[jupytext] Updating notebook metadata with '{"kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3 (ipykernel)"}}'
+[jupytext] Executing notebook with kernel python3
+Traceback (most recent call last):
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/bin/jupytext", line 10, in <module>
+    sys.exit(jupytext())
+             ^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 497, in jupytext
+    exit_code += jupytext_single_file(nb_file, args, log)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 734, in jupytext_single_file
+    exec_proc.preprocess(notebook, resources=resources)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 103, in preprocess
+    self.preprocess_cell(cell, resources, index)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 124, in preprocess_cell
+    cell = self.execute_cell(cell, index, store_history=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupyter_core/utils/__init__.py", line 165, in wrapped
+    return loop.run_until_complete(inner)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/asyncio/base_events.py", line 684, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 1062, in async_execute_cell
+    await self._check_raise_for_error(cell, cell_index, exec_reply)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 918, in _check_raise_for_error
+    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
+nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
+------------------
+
+# after experiment successful, summarize findings in respective ipynb and integrate into defaults
+experiments = dict(
+  default =     ('default', True), 
+  draft =       ('draft', True),
+  architecture = ('model_architecture', ['smp.Unet', 'smp.Unet:attention', 'smp.UnetPlusPlus']),  # NOTE: 'smp.Unet:deeper' fails, likely due to a bug in smp :[
+  encoder_all =     ('model_encoder', ['resnet34', 'resnext50_32x4d', 'timm-resnest50d', 'timm-res2net50_26w_4s', 'timm-regnetx_064', 'timm-gernet_l', 'se_resnext50_32x4d', 'timm-skresnext50_32x4d', 'densenet161', 'xception', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'dpn68b', 'vgg19_bn', 'mit_b2', 'mobileone_s4']),
+  encoder_adaptedbestsmall =     ('model_encoder', ['resnet152', 'resnet34', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'timm-resnest50d', 'xception', 'vgg19_bn']),
+  encoder_big = ('model_encoder', ['resnet152', 'timm-efficientnet-l2', 'timm-efficientnet-b8', 'timm-mobilenetv3_large_100', 'timm-resnest200e', 'timm-resnest269e', 'inceptionresnetv2', 'inceptionv4', 'xception', 'vgg19_bn']) 
+  xnorm_per_channel = ('xnorm_type', 'image_per_channel'),
+##  rmbad =       ('rmbad', 0.1), ## DECRAP?
+  loss =        ('lossf', ['MSE','BCE', 'MSE+BCE']), # 'KLD', 'MSE+BCE+KLD', 'Focal', 'MCC', 'Dice' Focal and MCC are erroneous (maybe logits vs probs). Dice is bad.  TODO Be inspired by arxiv:1907.02336
+  # TODO: if linearcomb is better, then grid search weight
+  sigma =       ('sigma', [3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]),
+  fraction =    ('fraction', [0.1, 0.25, 0.5, 0.75, 0.875, 1.0]),
+  sparsity =    ('sparsity', [0.1, 0.25, 0.5, 0.75, 0.875, 1.0]),
+)
+
+from json import decoder
+from cellnet import data
+import pandas as pd
+
+data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
+
+image_paths = [i for i in data.ls('data/images') if data_quality.loc[data.imgid(i), 'annotation_status'] in ('fully', 'sparse', 'empty')]
+crossval_vals = '1 | 2 | QS_7510'# | QS_7415' # NOTE that with the empty image the accuracy formula breaks
+
+
+import os, torch, json
+from types import SimpleNamespace as obj
+
+EXPERIMENT = os.getenv('EXPERIMENT', 'default')
+CUDA = torch.cuda.is_available()
+device = torch.device('cuda:0' if CUDA else 'cpu'); print('device =', device)
+
+P, ps = experiments[EXPERIMENT]
+
+modes = ['release', 'crossval', 'draft']
+MODE = os.getenv('RELEASE_MODE', 'draft')
+if MODE not in modes: MODE = 'crossval' 
+# MODE undefined => interactive execution with draft; uknown custom tag defaults to crossval
+
+
+if   MODE=='draft': data_splits = [(['data/images/1.jpg'], ['data/images/4.jpg'])]
+elif MODE=='release': data_splits = [(image_paths, [])]
+else: #MODE=='crossval': 
+  crossval_vals = [s.split(' ') for s in crossval_vals.split(' | ')]
+  data_splits = [([p for p in image_paths if data.imgid(p) not in vs], 
+                  [p for p in image_paths if data.imgid(p)     in vs]) 
+                  for vs in crossval_vals]
+  
+
+CFG = obj(**(dict(
+  EXPERIMENT=EXPERIMENT,
+  cropsize=512,
+  batch_size=16,
+  data_splits=data_splits,
+  device=f'{device}',
+  epochs=351,
+  fraction=1, 
+  image_paths=image_paths,
+  lossf='MSE',
+  lr_gamma=0.1,
+  lr_steps=2.5,
+  maxdist=26, 
+  MODE=MODE,
+  model_architecture='smp.Unet',
+  model_encoder='resnet152',
+  param=P,
+  rmbad=0,
+  sigma=5.0,  # NOTE: do grid search again later when better convergence 
+  sparsity=1,
+  xnorm_params={},
+  xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
+  ) | {P: ps[-1] if type(ps) is list else ps}))
+
+if 'draft' in CFG.__dict__ and CFG.draft is True: 
+  CFG.epochs = 2
+  #CFG.model_architecture = 'UNet'
+  #CFG.model_encoder = 'resnet34'
+
+import torch
+import matplotlib.pyplot as plt
+import numpy as np, pandas as pd
+
+import albumentations as A; from albumentations.pytorch import ToTensorV2
+
+import os, json
+from types import SimpleNamespace as obj
+from statistics import mean, stdev
+
+from cellnet.data import *
+import cellnet.plot as plot
+import cellnet.debug as debug
+from cellnet.data import key2text
+
+# save the config to disk
+with open('cfg.json', 'w') as f:  f.write(json.dumps(CFG.__dict__, indent=2))
+------------------
+
+
+[0;36m  Cell [0;32mIn[1], line 8[0;36m[0m
+[0;31m    encoder_big = ('model_encoder', ['resnet152', 'timm-efficientnet-l2', 'timm-efficientnet-b8', 'timm-mobilenetv3_large_100', 'timm-resnest200e', 'timm-resnest269e', 'inceptionresnetv2', 'inceptionv4', 'xception', 'vgg19_bn'])[0m
+[0m                  ^[0m
+[0;31mSyntaxError[0m[0;31m:[0m invalid syntax. Perhaps you forgot a comma?
+
+
+
+> Notebook execution time (hhmmss) 000005

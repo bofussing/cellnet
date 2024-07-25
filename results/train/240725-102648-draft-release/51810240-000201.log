@@ -1,0 +1,110 @@
+  ===  RUNNING ./train:draft (release) at Thu Jul 25 10:28:38 EEST 2024 ===  
+Thu Jul 25 10:28:38 2024       
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 545.23.08              Driver Version: 545.23.08    CUDA Version: 12.3     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  NVIDIA A100-SXM4-80GB          Off | 00000000:07:00.0 Off |                    0 |
+| N/A   29C    P0              60W / 400W |      4MiB / 81920MiB |      0%      Default |
+|                                         |                      |             Disabled |
++-----------------------------------------+----------------------+----------------------+
+                                                                                         
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|  No running processes found                                                           |
++---------------------------------------------------------------------------------------+
+[jupytext] Reading ./results/./train/240725-102648-draft-release-RUNNING/train.py in format py
+[jupytext] Setting kernel python3
+[jupytext] Updating notebook metadata with '{"kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3 (ipykernel)"}}'
+[jupytext] Executing notebook with kernel python3
+Traceback (most recent call last):
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/bin/jupytext", line 10, in <module>
+    sys.exit(jupytext())
+             ^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 497, in jupytext
+    exit_code += jupytext_single_file(nb_file, args, log)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 734, in jupytext_single_file
+    exec_proc.preprocess(notebook, resources=resources)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 103, in preprocess
+    self.preprocess_cell(cell, resources, index)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 124, in preprocess_cell
+    cell = self.execute_cell(cell, index, store_history=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupyter_core/utils/__init__.py", line 165, in wrapped
+    return loop.run_until_complete(inner)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/asyncio/base_events.py", line 684, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 1062, in async_execute_cell
+    await self._check_raise_for_error(cell, cell_index, exec_reply)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 918, in _check_raise_for_error
+    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
+nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
+------------------
+from cellnet import plot
+from cellnet.data import key2text
+from io import StringIO
+import ast, csv, pandas as pd
+
+## TODO those nans
+with open('results.csv', 'r') as f:
+  nan = "0"
+  s = f.read().replace('nan', nan).replace('NaN', nan).strip()
+  while ";;"  in s: s = s.replace(";;", ";"+nan+";")
+  while ";\n" in s: s = s.replace(";\n", ";"+nan+"\n")
+  while "\n;" in s: s = s.replace("\n;", "\n"+nan+";")
+  if s[-1] == ";": s = s + nan
+  if s[0] == ";": s = nan + s
+
+cols = pd.read_csv(StringIO(s), sep=';').columns
+R = pd.read_csv(StringIO(s), sep=';', converters={col:ast.literal_eval for col in cols})
+R.rename(columns=dict(vi=key2text['vi']), inplace=True)
+plot.regplot(R, R.columns[0], key2text)
+------------------
+
+----- stderr -----
+INFO:matplotlib.category:Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+----- stderr -----
+INFO:matplotlib.category:Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+----- stderr -----
+INFO:matplotlib.category:Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+----- stderr -----
+INFO:matplotlib.category:Using categorical units to plot a list of strings that are all parsable as floats or dates. If these strings should be plotted as numbers, cast to the appropriate data type before plotting.
+----- stdout -----
+Log. Cannot plot regression epochs-ta, likely because the variables are categorical and not numerical. (Only one unique x-value.)
+------------------
+
+[0;31m---------------------------------------------------------------------------[0m
+[0;31mValueError[0m                                Traceback (most recent call last)
+Cell [0;32mIn[7], line 19[0m
+[1;32m     17[0m R [38;5;241m=[39m pd[38;5;241m.[39mread_csv(StringIO(s), sep[38;5;241m=[39m[38;5;124m'[39m[38;5;124m;[39m[38;5;124m'[39m, converters[38;5;241m=[39m{col:ast[38;5;241m.[39mliteral_eval [38;5;28;01mfor[39;00m col [38;5;129;01min[39;00m cols})
+[1;32m     18[0m R[38;5;241m.[39mrename(columns[38;5;241m=[39m[38;5;28mdict[39m(vi[38;5;241m=[39mkey2text[[38;5;124m'[39m[38;5;124mvi[39m[38;5;124m'[39m]), inplace[38;5;241m=[39m[38;5;28;01mTrue[39;00m)
+[0;32m---> 19[0m [43mplot[49m[38;5;241;43m.[39;49m[43mregplot[49m[43m([49m[43mR[49m[43m,[49m[43m [49m[43mR[49m[38;5;241;43m.[39;49m[43mcolumns[49m[43m[[49m[38;5;241;43m0[39;49m[43m][49m[43m,[49m[43m [49m[43mkey2text[49m[43m)[49m
+
+File [0;32m~/cellnet/results/train/240725-102648-draft-release-RUNNING/cellnet/plot.py:163[0m, in [0;36mregplot[0;34m(data, dim, key2text, remove_outliers_below, sort_by)[0m
+[1;32m    161[0m ax[38;5;241m.[39mset_xlabel(dimtext)
+[1;32m    162[0m ax[38;5;241m.[39mset_ylabel(key2text[key])
+[0;32m--> 163[0m [43msns[49m[38;5;241;43m.[39;49m[43mmove_legend[49m[43m([49m[43max[49m[43m,[49m[43m [49m[38;5;124;43m"[39;49m[38;5;124;43mlower left[39;49m[38;5;124;43m"[39;49m[43m)[49m
+[1;32m    164[0m [38;5;66;03m# make the x-axis text readable[39;00m
+[1;32m    165[0m ax[38;5;241m.[39mset_xticklabels(ax[38;5;241m.[39mget_xticklabels(), rotation[38;5;241m=[39m[38;5;241m45[39m, horizontalalignment[38;5;241m=[39m[38;5;124m'[39m[38;5;124mright[39m[38;5;124m'[39m)
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/seaborn/utils.py:432[0m, in [0;36mmove_legend[0;34m(obj, loc, **kwargs)[0m
+[1;32m    430[0m [38;5;28;01mif[39;00m old_legend [38;5;129;01mis[39;00m [38;5;28;01mNone[39;00m:
+[1;32m    431[0m     err [38;5;241m=[39m [38;5;124mf[39m[38;5;124m"[39m[38;5;132;01m{[39;00mobj[38;5;132;01m}[39;00m[38;5;124m has no legend attached.[39m[38;5;124m"[39m
+[0;32m--> 432[0m     [38;5;28;01mraise[39;00m [38;5;167;01mValueError[39;00m(err)
+[1;32m    434[0m [38;5;66;03m# Extract the components of the legend we need to reuse[39;00m
+[1;32m    435[0m [38;5;66;03m# Import here to avoid a circular import[39;00m
+[1;32m    436[0m [38;5;28;01mfrom[39;00m [38;5;21;01mseaborn[39;00m[38;5;21;01m.[39;00m[38;5;21;01m_compat[39;00m [38;5;28;01mimport[39;00m get_legend_handles
+
+[0;31mValueError[0m: Axes(0.125,0.11;0.775x0.77) has no legend attached.
+
+
+> Notebook execution time (hhmmss) 000201

@@ -1,0 +1,205 @@
+  ===  RUNNING ./train:release (release) at Wed Jul 24 18:40:11 EEST 2024 ===  
+Wed Jul 24 18:40:11 2024       
++---------------------------------------------------------------------------------------+
+| NVIDIA-SMI 545.23.08              Driver Version: 545.23.08    CUDA Version: 12.3     |
+|-----------------------------------------+----------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
+|                                         |                      |               MIG M. |
+|=========================================+======================+======================|
+|   0  NVIDIA A100-SXM4-80GB          Off | 00000000:82:00.0 Off |                    0 |
+| N/A   30C    P0              58W / 400W |      4MiB / 81920MiB |      0%      Default |
+|                                         |                      |             Disabled |
++-----------------------------------------+----------------------+----------------------+
+                                                                                         
++---------------------------------------------------------------------------------------+
+| Processes:                                                                            |
+|  GPU   GI   CI        PID   Type   Process name                            GPU Memory |
+|        ID   ID                                                             Usage      |
+|=======================================================================================|
+|  No running processes found                                                           |
++---------------------------------------------------------------------------------------+
+[jupytext] Reading ./results/./train/240724-183854-release-release-RUNNING/train.py in format py
+[jupytext] Setting kernel python3
+[jupytext] Updating notebook metadata with '{"kernelspec": {"name": "python3", "language": "python", "display_name": "Python 3 (ipykernel)"}}'
+[jupytext] Executing notebook with kernel python3
+Traceback (most recent call last):
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/bin/jupytext", line 10, in <module>
+    sys.exit(jupytext())
+             ^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 497, in jupytext
+    exit_code += jupytext_single_file(nb_file, args, log)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupytext/cli.py", line 734, in jupytext_single_file
+    exec_proc.preprocess(notebook, resources=resources)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 103, in preprocess
+    self.preprocess_cell(cell, resources, index)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbconvert/preprocessors/execute.py", line 124, in preprocess_cell
+    cell = self.execute_cell(cell, index, store_history=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/jupyter_core/utils/__init__.py", line 165, in wrapped
+    return loop.run_until_complete(inner)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/asyncio/base_events.py", line 684, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 1062, in async_execute_cell
+    await self._check_raise_for_error(cell, cell_index, exec_reply)
+  File "/gpfs/space/home/eckhardt/.micromamba/envs/cellnet/lib/python3.12/site-packages/nbclient/client.py", line 918, in _check_raise_for_error
+    raise CellExecutionError.from_cell_and_msg(cell, exec_reply_content)
+nbclient.exceptions.CellExecutionError: An error occurred while executing the following cell:
+------------------
+# TODO maybe modularize model saving so it can be used to cache models from different experiments from P:ps
+if MODE=='release': # save model to disk
+  B = next(iter(mk_loader([CFG.image_paths[0]], cfg=CFG, bs=1, transforms=mkAugs('test'), shuffle=False)))
+  x = batch2cpu(B)[0].x[None]
+  
+  m=model#type: ignore
+  m.eval()
+
+  # save a test in/out
+  #os.makedirs(cachedir:=os.path.expanduser('~/.cache/cellnet'), exist_ok=True)
+  np.save('./model_export_test_x_1.npy', x)
+  np.save('./model_export_test_y_1.npy', cpu(m(gpu(x, device=device))))
+
+  m.save_pretrained('./model_export')  # specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml
+  os.remove('./model_export/README.md')
+
+  # convert all ndarray to list for json serialization
+  def rec_dict_array2list(d):
+    for k,v in d.items():
+      if isinstance(v, dict): rec_dict_array2list(v)
+      if isinstance(v, np.ndarray): d[k] = v.tolist()
+  settings = rec_dict_array2list(CFG.__dict__ | {'ymax':float(_ymax)})
+
+  with open('./model_export/settings.json', 'w') as f:  json.dump(settings, f, indent=2)
+
+if type(results[P][0]) == str: results[P] = results[P].apply(lambda s: "'"+s+"'")
+results.to_csv('results.csv', index=False, sep=';')
+
+debug.print_times()
+------------------
+
+
+[0;31m---------------------------------------------------------------------------[0m
+[0;31mOutOfMemoryError[0m                          Traceback (most recent call last)
+Cell [0;32mIn[6], line 12[0m
+[1;32m      9[0m [38;5;66;03m# save a test in/out[39;00m
+[1;32m     10[0m [38;5;66;03m#os.makedirs(cachedir:=os.path.expanduser('~/.cache/cellnet'), exist_ok=True)[39;00m
+[1;32m     11[0m np[38;5;241m.[39msave([38;5;124m'[39m[38;5;124m./model_export_test_x_1.npy[39m[38;5;124m'[39m, x)
+[0;32m---> 12[0m np[38;5;241m.[39msave([38;5;124m'[39m[38;5;124m./model_export_test_y_1.npy[39m[38;5;124m'[39m, cpu([43mm[49m[43m([49m[43mgpu[49m[43m([49m[43mx[49m[43m,[49m[43m [49m[43mdevice[49m[38;5;241;43m=[39;49m[43mdevice[49m[43m)[49m[43m)[49m))
+[1;32m     14[0m m[38;5;241m.[39msave_pretrained([38;5;124m'[39m[38;5;124m./model_export[39m[38;5;124m'[39m)  [38;5;66;03m# specific to master branch of SMP. TODO: make more robust with onnx. But see problem notes in cellnet.yml[39;00m
+[1;32m     15[0m os[38;5;241m.[39mremove([38;5;124m'[39m[38;5;124m./model_export/README.md[39m[38;5;124m'[39m)
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1532[0m, in [0;36mModule._wrapped_call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1530[0m     [38;5;28;01mreturn[39;00m [38;5;28mself[39m[38;5;241m.[39m_compiled_call_impl([38;5;241m*[39margs, [38;5;241m*[39m[38;5;241m*[39mkwargs)  [38;5;66;03m# type: ignore[misc][39;00m
+[1;32m   1531[0m [38;5;28;01melse[39;00m:
+[0;32m-> 1532[0m     [38;5;28;01mreturn[39;00m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43m_call_impl[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1541[0m, in [0;36mModule._call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1536[0m [38;5;66;03m# If we don't have any hooks, we want to skip the rest of the logic in[39;00m
+[1;32m   1537[0m [38;5;66;03m# this function, and just call forward.[39;00m
+[1;32m   1538[0m [38;5;28;01mif[39;00m [38;5;129;01mnot[39;00m ([38;5;28mself[39m[38;5;241m.[39m_backward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_backward_pre_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_pre_hooks
+[1;32m   1539[0m         [38;5;129;01mor[39;00m _global_backward_pre_hooks [38;5;129;01mor[39;00m _global_backward_hooks
+[1;32m   1540[0m         [38;5;129;01mor[39;00m _global_forward_hooks [38;5;129;01mor[39;00m _global_forward_pre_hooks):
+[0;32m-> 1541[0m     [38;5;28;01mreturn[39;00m [43mforward_call[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+[1;32m   1543[0m [38;5;28;01mtry[39;00m:
+[1;32m   1544[0m     result [38;5;241m=[39m [38;5;28;01mNone[39;00m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/segmentation_models_pytorch/base/model.py:39[0m, in [0;36mSegmentationModel.forward[0;34m(self, x)[0m
+[1;32m     36[0m [38;5;28mself[39m[38;5;241m.[39mcheck_input_shape(x)
+[1;32m     38[0m features [38;5;241m=[39m [38;5;28mself[39m[38;5;241m.[39mencoder(x)
+[0;32m---> 39[0m decoder_output [38;5;241m=[39m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mdecoder[49m[43m([49m[38;5;241;43m*[39;49m[43mfeatures[49m[43m)[49m
+[1;32m     41[0m masks [38;5;241m=[39m [38;5;28mself[39m[38;5;241m.[39msegmentation_head(decoder_output)
+[1;32m     43[0m [38;5;28;01mif[39;00m [38;5;28mself[39m[38;5;241m.[39mclassification_head [38;5;129;01mis[39;00m [38;5;129;01mnot[39;00m [38;5;28;01mNone[39;00m:
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1532[0m, in [0;36mModule._wrapped_call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1530[0m     [38;5;28;01mreturn[39;00m [38;5;28mself[39m[38;5;241m.[39m_compiled_call_impl([38;5;241m*[39margs, [38;5;241m*[39m[38;5;241m*[39mkwargs)  [38;5;66;03m# type: ignore[misc][39;00m
+[1;32m   1531[0m [38;5;28;01melse[39;00m:
+[0;32m-> 1532[0m     [38;5;28;01mreturn[39;00m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43m_call_impl[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1541[0m, in [0;36mModule._call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1536[0m [38;5;66;03m# If we don't have any hooks, we want to skip the rest of the logic in[39;00m
+[1;32m   1537[0m [38;5;66;03m# this function, and just call forward.[39;00m
+[1;32m   1538[0m [38;5;28;01mif[39;00m [38;5;129;01mnot[39;00m ([38;5;28mself[39m[38;5;241m.[39m_backward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_backward_pre_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_pre_hooks
+[1;32m   1539[0m         [38;5;129;01mor[39;00m _global_backward_pre_hooks [38;5;129;01mor[39;00m _global_backward_hooks
+[1;32m   1540[0m         [38;5;129;01mor[39;00m _global_forward_hooks [38;5;129;01mor[39;00m _global_forward_pre_hooks):
+[0;32m-> 1541[0m     [38;5;28;01mreturn[39;00m [43mforward_call[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+[1;32m   1543[0m [38;5;28;01mtry[39;00m:
+[1;32m   1544[0m     result [38;5;241m=[39m [38;5;28;01mNone[39;00m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/segmentation_models_pytorch/decoders/unetplusplus/decoder.py:152[0m, in [0;36mUnetPlusPlusDecoder.forward[0;34m(self, *features)[0m
+[1;32m    146[0m             cat_features [38;5;241m=[39m torch[38;5;241m.[39mcat(
+[1;32m    147[0m                 cat_features [38;5;241m+[39m [features[dense_l_i [38;5;241m+[39m [38;5;241m1[39m]], dim[38;5;241m=[39m[38;5;241m1[39m
+[1;32m    148[0m             )
+[1;32m    149[0m             dense_x[[38;5;124mf[39m[38;5;124m"[39m[38;5;124mx_[39m[38;5;132;01m{[39;00mdepth_idx[38;5;132;01m}[39;00m[38;5;124m_[39m[38;5;132;01m{[39;00mdense_l_i[38;5;132;01m}[39;00m[38;5;124m"[39m] [38;5;241m=[39m [38;5;28mself[39m[38;5;241m.[39mblocks[
+[1;32m    150[0m                 [38;5;124mf[39m[38;5;124m"[39m[38;5;124mx_[39m[38;5;132;01m{[39;00mdepth_idx[38;5;132;01m}[39;00m[38;5;124m_[39m[38;5;132;01m{[39;00mdense_l_i[38;5;132;01m}[39;00m[38;5;124m"[39m
+[1;32m    151[0m             ](dense_x[[38;5;124mf[39m[38;5;124m"[39m[38;5;124mx_[39m[38;5;132;01m{[39;00mdepth_idx[38;5;132;01m}[39;00m[38;5;124m_[39m[38;5;132;01m{[39;00mdense_l_i[38;5;241m-[39m[38;5;241m1[39m[38;5;132;01m}[39;00m[38;5;124m"[39m], cat_features)
+[0;32m--> 152[0m dense_x[[38;5;124mf[39m[38;5;124m"[39m[38;5;124mx_[39m[38;5;132;01m{[39;00m[38;5;241m0[39m[38;5;132;01m}[39;00m[38;5;124m_[39m[38;5;132;01m{[39;00m[38;5;28mself[39m[38;5;241m.[39mdepth[38;5;132;01m}[39;00m[38;5;124m"[39m] [38;5;241m=[39m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mblocks[49m[43m[[49m[38;5;124;43mf[39;49m[38;5;124;43m"[39;49m[38;5;124;43mx_[39;49m[38;5;132;43;01m{[39;49;00m[38;5;241;43m0[39;49m[38;5;132;43;01m}[39;49;00m[38;5;124;43m_[39;49m[38;5;132;43;01m{[39;49;00m[38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mdepth[49m[38;5;132;43;01m}[39;49;00m[38;5;124;43m"[39;49m[43m][49m[43m([49m
+[1;32m    153[0m [43m    [49m[43mdense_x[49m[43m[[49m[38;5;124;43mf[39;49m[38;5;124;43m"[39;49m[38;5;124;43mx_[39;49m[38;5;132;43;01m{[39;49;00m[38;5;241;43m0[39;49m[38;5;132;43;01m}[39;49;00m[38;5;124;43m_[39;49m[38;5;132;43;01m{[39;49;00m[38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mdepth[49m[38;5;241;43m-[39;49m[38;5;241;43m1[39;49m[38;5;132;43;01m}[39;49;00m[38;5;124;43m"[39;49m[43m][49m
+[1;32m    154[0m [43m[49m[43m)[49m
+[1;32m    155[0m [38;5;28;01mreturn[39;00m dense_x[[38;5;124mf[39m[38;5;124m"[39m[38;5;124mx_[39m[38;5;132;01m{[39;00m[38;5;241m0[39m[38;5;132;01m}[39;00m[38;5;124m_[39m[38;5;132;01m{[39;00m[38;5;28mself[39m[38;5;241m.[39mdepth[38;5;132;01m}[39;00m[38;5;124m"[39m]
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1532[0m, in [0;36mModule._wrapped_call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1530[0m     [38;5;28;01mreturn[39;00m [38;5;28mself[39m[38;5;241m.[39m_compiled_call_impl([38;5;241m*[39margs, [38;5;241m*[39m[38;5;241m*[39mkwargs)  [38;5;66;03m# type: ignore[misc][39;00m
+[1;32m   1531[0m [38;5;28;01melse[39;00m:
+[0;32m-> 1532[0m     [38;5;28;01mreturn[39;00m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43m_call_impl[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1541[0m, in [0;36mModule._call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1536[0m [38;5;66;03m# If we don't have any hooks, we want to skip the rest of the logic in[39;00m
+[1;32m   1537[0m [38;5;66;03m# this function, and just call forward.[39;00m
+[1;32m   1538[0m [38;5;28;01mif[39;00m [38;5;129;01mnot[39;00m ([38;5;28mself[39m[38;5;241m.[39m_backward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_backward_pre_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_pre_hooks
+[1;32m   1539[0m         [38;5;129;01mor[39;00m _global_backward_pre_hooks [38;5;129;01mor[39;00m _global_backward_hooks
+[1;32m   1540[0m         [38;5;129;01mor[39;00m _global_forward_hooks [38;5;129;01mor[39;00m _global_forward_pre_hooks):
+[0;32m-> 1541[0m     [38;5;28;01mreturn[39;00m [43mforward_call[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+[1;32m   1543[0m [38;5;28;01mtry[39;00m:
+[1;32m   1544[0m     result [38;5;241m=[39m [38;5;28;01mNone[39;00m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/segmentation_models_pytorch/decoders/unetplusplus/decoder.py:44[0m, in [0;36mDecoderBlock.forward[0;34m(self, x, skip)[0m
+[1;32m     42[0m x [38;5;241m=[39m [38;5;28mself[39m[38;5;241m.[39mconv1(x)
+[1;32m     43[0m x [38;5;241m=[39m [38;5;28mself[39m[38;5;241m.[39mconv2(x)
+[0;32m---> 44[0m x [38;5;241m=[39m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mattention2[49m[43m([49m[43mx[49m[43m)[49m
+[1;32m     45[0m [38;5;28;01mreturn[39;00m x
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1532[0m, in [0;36mModule._wrapped_call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1530[0m     [38;5;28;01mreturn[39;00m [38;5;28mself[39m[38;5;241m.[39m_compiled_call_impl([38;5;241m*[39margs, [38;5;241m*[39m[38;5;241m*[39mkwargs)  [38;5;66;03m# type: ignore[misc][39;00m
+[1;32m   1531[0m [38;5;28;01melse[39;00m:
+[0;32m-> 1532[0m     [38;5;28;01mreturn[39;00m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43m_call_impl[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1541[0m, in [0;36mModule._call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1536[0m [38;5;66;03m# If we don't have any hooks, we want to skip the rest of the logic in[39;00m
+[1;32m   1537[0m [38;5;66;03m# this function, and just call forward.[39;00m
+[1;32m   1538[0m [38;5;28;01mif[39;00m [38;5;129;01mnot[39;00m ([38;5;28mself[39m[38;5;241m.[39m_backward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_backward_pre_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_pre_hooks
+[1;32m   1539[0m         [38;5;129;01mor[39;00m _global_backward_pre_hooks [38;5;129;01mor[39;00m _global_backward_hooks
+[1;32m   1540[0m         [38;5;129;01mor[39;00m _global_forward_hooks [38;5;129;01mor[39;00m _global_forward_pre_hooks):
+[0;32m-> 1541[0m     [38;5;28;01mreturn[39;00m [43mforward_call[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+[1;32m   1543[0m [38;5;28;01mtry[39;00m:
+[1;32m   1544[0m     result [38;5;241m=[39m [38;5;28;01mNone[39;00m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/segmentation_models_pytorch/base/modules.py:129[0m, in [0;36mAttention.forward[0;34m(self, x)[0m
+[1;32m    128[0m [38;5;28;01mdef[39;00m [38;5;21mforward[39m([38;5;28mself[39m, x):
+[0;32m--> 129[0m     [38;5;28;01mreturn[39;00m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mattention[49m[43m([49m[43mx[49m[43m)[49m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1532[0m, in [0;36mModule._wrapped_call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1530[0m     [38;5;28;01mreturn[39;00m [38;5;28mself[39m[38;5;241m.[39m_compiled_call_impl([38;5;241m*[39margs, [38;5;241m*[39m[38;5;241m*[39mkwargs)  [38;5;66;03m# type: ignore[misc][39;00m
+[1;32m   1531[0m [38;5;28;01melse[39;00m:
+[0;32m-> 1532[0m     [38;5;28;01mreturn[39;00m [38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43m_call_impl[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/torch/nn/modules/module.py:1541[0m, in [0;36mModule._call_impl[0;34m(self, *args, **kwargs)[0m
+[1;32m   1536[0m [38;5;66;03m# If we don't have any hooks, we want to skip the rest of the logic in[39;00m
+[1;32m   1537[0m [38;5;66;03m# this function, and just call forward.[39;00m
+[1;32m   1538[0m [38;5;28;01mif[39;00m [38;5;129;01mnot[39;00m ([38;5;28mself[39m[38;5;241m.[39m_backward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_backward_pre_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_hooks [38;5;129;01mor[39;00m [38;5;28mself[39m[38;5;241m.[39m_forward_pre_hooks
+[1;32m   1539[0m         [38;5;129;01mor[39;00m _global_backward_pre_hooks [38;5;129;01mor[39;00m _global_backward_hooks
+[1;32m   1540[0m         [38;5;129;01mor[39;00m _global_forward_hooks [38;5;129;01mor[39;00m _global_forward_pre_hooks):
+[0;32m-> 1541[0m     [38;5;28;01mreturn[39;00m [43mforward_call[49m[43m([49m[38;5;241;43m*[39;49m[43margs[49m[43m,[49m[43m [49m[38;5;241;43m*[39;49m[38;5;241;43m*[39;49m[43mkwargs[49m[43m)[49m
+[1;32m   1543[0m [38;5;28;01mtry[39;00m:
+[1;32m   1544[0m     result [38;5;241m=[39m [38;5;28;01mNone[39;00m
+
+File [0;32m~/.micromamba/envs/cellnet/lib/python3.12/site-packages/segmentation_models_pytorch/base/modules.py:62[0m, in [0;36mSCSEModule.forward[0;34m(self, x)[0m
+[1;32m     61[0m [38;5;28;01mdef[39;00m [38;5;21mforward[39m([38;5;28mself[39m, x):
+[0;32m---> 62[0m     [38;5;28;01mreturn[39;00m [43mx[49m[43m [49m[38;5;241;43m*[39;49m[43m [49m[38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43mcSE[49m[43m([49m[43mx[49m[43m)[49m[43m [49m[38;5;241;43m+[39;49m[43m [49m[43mx[49m[43m [49m[38;5;241;43m*[39;49m[43m [49m[38;5;28;43mself[39;49m[38;5;241;43m.[39;49m[43msSE[49m[43m([49m[43mx[49m[43m)[49m
+
+[0;31mOutOfMemoryError[0m: CUDA out of memory. Tried to allocate 3.00 GiB. GPU 
+
+
+> Notebook execution time (hhmmss) 001241
