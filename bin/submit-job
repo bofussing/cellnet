@@ -34,5 +34,5 @@ if [ "$MODE" == "sbatch" ]; then
 elif [ "$MODE" == "local" ]; then
   echo -e "\033[1;32mRunning job in current node $NAME:$EXPERIMENT ($RELEASE_MODE) at $STARTTIME\033[0m"
   bin/job-ipynb "$NAME" "$INDIR" "$INPUT" "$OUTDIR" "$EXPERIMENT" "$RELEASE_MODE"
-else echo "Usage: run [remote [local|sbatch]|local|sbatch] INPUT EXPERIMENT RELEASE_MODE"; exit 1;
+else echo "Usage: ./bin/submit-job [remote] local|sbatch <notebook> <experiment> <release-mode>"; exit 1;
 fi

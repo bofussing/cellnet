@@ -4,6 +4,7 @@ import pathlib
 import numpy as np, cv2, pandas as pd
 from scipy.ndimage import gaussian_filter, distance_transform_edt
 
+from sympy import Q
 import torch, torch.utils.data
 
 import json, os
@@ -71,7 +72,7 @@ def load_images(image_paths):
 def load_points(image_paths): 
   out = {}
   for p in image_paths:
-    try: out[p] = np.load(f'data/cache/points/{imgid(p)}.npy').round().astype(np.int32) #### NOTE TODO: evaluate preditive performance effect of this!
+    try: out[p] = np.load(f'data/cache/points/{imgid(p)}.npy')
     except Exception as e: raise Exception(f"Could not load points for image {p}.") from e
   return out
 
@@ -85,7 +86,7 @@ def load_fgmasks(image_paths):
 
 class CellnetDataset(torch.utils.data.Dataset):
   def __init__(self, image_paths, sigma, maxdist, sparsity=1.0, fraction=1.0, batch_size=None, 
-               transforms=None, data_quality_file='data/data_quality.csv', **_junk):
+               transforms=None, data_quality_file='data/data_quality.csv', override_points=None, **_junk):
     super().__init__()
     if type(image_paths)==str: image_paths = [p for p in os.listdir(image_paths) if p.endswith('.jpg')]
     self.batch_size = noneor(batch_size, len(image_paths))
@@ -94,11 +95,11 @@ class CellnetDataset(torch.utils.data.Dataset):
     self.data_quality = pd.read_csv('data/data_quality.csv', sep=r'\s+', index_col=0)
     
     self.X = load_images(image_paths)  # NOTE albumentations=BHWC 可是 torch=BCHW
-
-    self.P = {i: load_points([i])[i] if self.data_quality.loc[imgid(i)]['annotation_status']\
-               != 'empty' else no_points for i in image_paths} 
+    if override_points is not None: self.P = override_points
+    else: self.P = {i: load_points([i])[i] if self.data_quality.loc[imgid(i)]['annotation_status']\
+                                              != 'empty' else no_points for i in image_paths} 
     # raise an error if not all image_paths have point annotations
-    assert set(self.X.keys()) == set(self.P.keys()), f"The following images have no (cached) point annotations in: {set(self.X.keys()) - set(self.P.keys())}"
+    assert set(self.X.keys()) == set(self.P.keys()), f"The following images have no (cached) point annotations: {set(self.X.keys()) - set(self.P.keys())}"
 
     self._generate_masks(fraction=self.fraction, sparsity=self.sparsity)
 
@@ -113,8 +114,8 @@ class CellnetDataset(torch.utils.data.Dataset):
       if q['annotation_status'] in ('fully', 'empty'): 
         self.M[i] = np.ones_like(self.M[i])
         print(f"INFO: Because {i} is fully annotated or purposefully empty, fgmask is set to 1")
-      elif q['fgmask_status'] != "OK": 
-        raise Exception(f"ERROR: {i} has fgmask_status {q['fgmask_status']}!=OK, but is not fully annotated. Don't know what to do with this image currently. Please fix or exclude from image_paths")
+      elif q['fgmask_status'] != "ok": 
+        raise Exception(f"ERROR: {i} has fgmask_status {q['fgmask_status']}!=ok, but is not fully annotated. Don't know what to do with this image currently. Please fix or exclude from image_paths")
 
     if (f:=fraction) < 1.0: 
       _s = self.X[self.ids[0]].shape
@@ -138,13 +139,13 @@ class CellnetDataset(torch.utils.data.Dataset):
   def __len__    (self): return max(self.batch_size, len(self.X))
   def __getitem__(self, i): 
     i = self.ids[i % len(self.X)]
-    return self.transforms(image=self.X[i], masks=[self.M[i]], keypoints=self.P[i][:,[0,1]], class_labels=self.P[i][:,2])
+    return self.transforms(image=self.X[i], masks=[self.M[i]], keypoints=self.P[i][:,[0,1]], class_labels=self.P[i][:,2].astype(int))
 
   def map(self, f, dim='XY'):
     for n in dim: self.set(n, f(self.get(n)))
 
 
-def mk_loader(image_paths, bs, transforms, cfg, shuffle=True):
+def mk_loader(image_paths, bs, transforms, cfg, shuffle=True, override_points=None):
   def collate(S):
     return dict(
       image = torch.stack([s['image'] for s in S]),
@@ -154,7 +155,7 @@ def mk_loader(image_paths, bs, transforms, cfg, shuffle=True):
     )
 
   from torch.cuda import device_count as gpu_count; from multiprocessing import cpu_count 
-  return torch.utils.data.DataLoader(CellnetDataset(**(cfg.__dict__ | dict(image_paths=image_paths, transforms=transforms, batch_size=bs))), 
+  return torch.utils.data.DataLoader(CellnetDataset(**(cfg.__dict__ | dict(image_paths=image_paths, transforms=transforms, batch_size=bs, override_points=override_points))), 
     batch_size=bs, shuffle=shuffle, collate_fn=collate, pin_memory=True, num_workers=8) # TODO: figure out and fix error and change back #8 if torch.cuda.is_available() else 2)
 
 
@@ -175,7 +176,7 @@ def mk_kp2mh_yunnorm(cfg, norm_using_images=['all'], **overwrite_cfg):
   ds = CellnetDataset(**(cfg.__dict__ | dict(image_paths=norm_using_images) | overwrite_cfg))
 
   Y = np.stack([Keypoints2Heatmap(cfg.sigma, ynorm=lambda y:y, labels_to_include=[1])(
-                 x.transpose(2,0,1),[m],pl[:,[0,1]],pl[:,2]) 
+                 x.transpose(2,0,1),[m],pl[:,[0,1]],pl[:,2].astype(int)) 
                 for x,m,pl in zip(*[v.values() for v in [ds.X, ds.M, ds.P]])], axis=0)
   
   ymax = Y.max() 
@@ -212,11 +213,11 @@ def loss_per_point(b, lossf, kernel=15, exclude=[]):
 
 # this function expects [B][i][X,Y,L] and returns [B][H,W,C]
 def onehot(hw, P, channels=None):
-  if channels is None: channels = list(set.union({0,1}, set(np.unique(P[:,:,2]))))
+  if channels is None: channels = list(set.union({0,1}, set(np.unique(P[:,:,2].astype(int)))))
   A = np.zeros((len(P),*hw, max(channels))) 
   for b in range(len(P)):
     for x,y,l in P[b]:
-      A[b, int(y), int(x), l-1] = 1
+      A[b, int(y), int(x), int(l)-1] = 1
   return A  # -> BHWC
 
 def mask_sparse(ids, X, P, maxdist, channels): 

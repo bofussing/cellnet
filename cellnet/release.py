@@ -53,7 +53,20 @@ def init_model(version:str|None='latest', keep_download_cache=True):
   else: version = prexisting_version
 
   settings = json.load(open(f'{modeldir}/settings.json'))
-  model = smp.Unet.from_pretrained(f'{modeldir}')  ## TODO make class dynamic depending on settings
+
+  model_class = settings['model_architecture'].split(':')[0]
+  model = {'smp.Unet': smp.Unet, 
+           'smp.UnetPlusPlus': smp.UnetPlusPlus,
+           'smp.FPN': smp.FPN,
+           'smp.PSPNet': smp.PSPNet,
+           'smp.DeepLabV3': smp.DeepLabV3,
+           'smp.DeepLabV3Plus': smp.DeepLabV3Plus,
+           'smp.Linknet': smp.Linknet,
+           'smp.MAnet': smp.MAnet,
+           'smp.PAN': smp.PAN,
+           }[model_class].from_pretrained(f'{modeldir}')  ## TODO make class dynamic depending on settings
+  
+  
   setattr(model, 'settings', settings)
   setattr(model, 'version', version)
   print('Model version:', version, '(latest)' if islatest else '(cached)')
@@ -97,7 +110,7 @@ if __name__ == '__main__':
   image_paths = []
   for target in targets:
     if os.path.isdir(target):
-      image_paths += [f"{target}/{f}" for f in os.listdir(target) if f.endswith('.jpg')]
+      image_paths += [f"{target}/{f}" for f in os.listdir(target) if f.split('.')[-1] in ['jpg', 'jpeg', 'png', 'tiff']]
     elif os.path.isfile(target):
       image_paths += [target]
     else: raise ValueError(f"Could not find target: {target}") 
