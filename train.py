@@ -8,14 +8,8 @@ experiments = dict(
   default =     ('default', True), 
   draft =       ('epochs', 2),
   
-  release1 =    ('release1', True),
-  release1n =    ('release1n', True),
-  release2 =    ('release2', True),
-  release2n =    ('release2n', True),
-  release3 =    ('release3', True),
-  release3n =    ('release3n', True),
-  release4 =    ('release4', True),
-  release4n =    ('release4n', True),
+  release =    ('epochs', 501),
+  release_big =    ('epochs', 501),
 
   architecture = ('model_architecture', ['smp.Unet', 'smp.Unet:attention', 'smp.UnetPlusPlus']),  # NOTE: 'smp.Unet:deeper' fails, likely due to a bug in smp :[
   encoder_all =     ('model_encoder', ['resnet34', 'resnext50_32x4d', 'timm-resnest50d', 'timm-res2net50_26w_4s', 'timm-regnetx_064', 'timm-gernet_l', 'se_resnext50_32x4d', 'timm-skresnext50_32x4d', 'densenet161', 'xception', 'timm-efficientnet-b5', 'timm-mobilenetv3_large_100', 'dpn68b', 'vgg19_bn', 'mit_b2', 'mobileone_s4']),
@@ -88,39 +82,10 @@ CFG = obj(**(dict(
   xnorm_type='imagenet',  # TODO: check 'image_per_channel' as well
   ) | {P: ps[-1] if type(ps) is list else ps}))
 
-# NOTE quick hacks
-if MODE=='release': 
-  CFG.epochs=501
 
 match EXPERIMENT:
-  case 'release1':
-    CFG.model_encoder = 'timm-mobilenetv3_large_100'
-
-  case 'release1n':
-    CFG.model_encoder = 'timm-mobilenetv3_large_100'
-    CFG.xnorm_type = 'image_per_channel'
-
-  case 'release2':
-    CFG.model_encoder = 'timm-efficientnet-l2'
-    CFG.cropsize = 256
-
-  case 'release2n':
-    CFG.model_encoder = 'timm-efficientnet-l2'
-    CFG.xnorm_type = 'image_per_channel'
-    CFG.cropsize = 256
-
-  case 'release3':
+  case 'release_big':
     CFG.model_encoder = 'timm-efficientnet-b8'
-  
-  case 'release3n':
-    CFG.model_encoder = 'timm-efficientnet-b8'
-    CFG.xnorm_type = 'image_per_channel'
-
-
-if 'draft' in CFG.__dict__ and CFG.draft is True: 
-  CFG.epochs = 2
-  #CFG.model_architecture = 'UNet'
-  #CFG.model_encoder = 'resnet34'
 
 import torch
 import matplotlib.pyplot as plt

@@ -146,7 +146,7 @@ def regplot(data, dim, key2text, remove_outliers_below:None|float=0, sort_by='va
       fun = lambda dimval, vi, x: (print(f"NOTE: Outlier hidden at {dim}={dimval}, {key} = {x}"+(f" (vi: {vi})")), remove_outliers_below)[-1] if x < remove_outliers_below else x
       data[key] = data.apply(lambda row: fun(row[dim], row[key2text['vi']], row[key]), axis=1)
 
-  axs = [plt.subplots(1,1, figsize=(10*(golden := (1 + 5 ** 0.5) / 2),10))[1] for _ in range(4)]
+  axs = [plt.subplots(1,1, figsize=(5*(golden := (1 + 5 ** 0.5) / 2),5))[1] for _ in range(len(keys))]
   for ax, key in zip(axs, keys):
     try: 
       if len(data[dim].unique()) <= 1: raise Exception("Only one unique x-value.")
@@ -154,12 +154,12 @@ def regplot(data, dim, key2text, remove_outliers_below:None|float=0, sort_by='va
       sns.scatterplot(ax=ax, data=data, x=dim, y=key, hue=by_val_img)
     except Exception as e: 
       print(f"Log. Cannot plot regression {dim}-{key}, likely because the variables are categorical and not numerical. ({e})") 
-      sns.violinplot(x=dim, y=key, data=data, ax=ax, orient='v', fill=False, inner="quart")
+      sns.boxplot(x=dim, y=key, data=data, ax=ax, orient='v', fill=False)
       sns.swarmplot(ax=ax, data=data, x=dim, y=key, hue=by_val_img)
     dimtext = key2text[dim] if dim in key2text else f'{dim}'
     ax.set_title(f'{key2text[key]} vs {dimtext}')
     ax.set_xlabel(dimtext)
     ax.set_ylabel(key2text[key])
-    sns.move_legend(ax, "lower left")
+    if by_val_img.nunique() > 1: sns.move_legend(ax, "lower left")
     # make the x-axis text readable
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, horizontalalignment='right')

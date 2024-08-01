@@ -1,3 +1,4 @@
+import re
 import torch
 import segmentation_models_pytorch as smp
 
@@ -13,13 +14,17 @@ from cellnet.internet import download, GHAPI
 GH = GHAPI('beijn/cellnet')
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+def is_compatible(model_version: str):
+  return model_version.split('-')[0] == cellnet.__model_api_version__
                             
   
-def get_latest_compatible_model_version():
+def get_newest_compatible_model_version():
   try: versions = GH.get_all_releases()
   except Exception as e: sys.exit(print(f'Could not get the latest release from GH API. Please specify manually in init_model(<version>). See available versions at https://github.com/beijn/cellnet/releases.\n\n{e}'))
 
-  compatible_versions = [v for v in versions if v.split('-')[0]==cellnet.__model_api_version__]
+  compatible_versions = [v for v in versions if is_compatible(v)]
   if not compatible_versions: sys.exit(print(f"No compatible model (model api version {cellnet.__model_api_version__}) found at https://github.com/beijn/cellnet/releases. \nPlease specify manually in init_model(<version>). \nFound incompatible versions: {versions}"))
 
   return compatible_versions[0]
@@ -27,7 +32,8 @@ def get_latest_compatible_model_version():
 
 # TODO: restrict to compatible versions?
 def init_model(version:str|None='latest', keep_download_cache=True):
-  cache = os.path.expanduser('~/.cache/cellnet')
+  cache = './.cache/cellnet'
+  os.makedirs(cache, exist_ok=True)
   modeldir = version if type(version) is str and os.path.isdir(version) else f'{cache}/model_export'
   versionfile = f'{modeldir}/version.json'
   prexisting_version = json.load(open(versionfile))['version'] if os.path.isfile(versionfile) else None
@@ -36,13 +42,21 @@ def init_model(version:str|None='latest', keep_download_cache=True):
 
   # if the version is None, we just use whatever is cached or redownload the latest if it's not cached
   if not (version == None and os.path.isdir(modeldir)): 
-    if version == 'latest': version = get_latest_compatible_model_version()
+    if version == 'latest': 
+      version = GH.get_latest_release()
+      if not is_compatible(version):
+        version = get_newest_compatible_model_version()
+    elif not is_compatible(version): sys.exit(print(f"ERROR: Model version {version} is not compatible with the current model API version {cellnet.__model_api_version__}. Please specify a compatible model version (eg. 'latest') or use a matching software version."))
 
     if prexisting_version != version:
-      # TODO checksum of model.zip
-      releases_url = 'https://github.com/beijn/cellnet/releases'
-      try: download(f'{releases_url}/download/{version}/model.zip', f'{cache}/model-{version}.zip', f'Model', overwrite=True)  
-      except FileNotFoundError as e: sys.exit(print(f'Could not download model version `{version}`. Please check that it exists at {releases_url}.'))
+      cached_versions = [re.match(r'model-(.*)\.zip', d) for d in os.listdir(cache)]      
+      cached_versions = [m.group(1) for m in cached_versions if m]
+      
+      if version not in cached_versions:
+        # TODO checksum of model.zip
+        releases_url = 'https://github.com/beijn/cellnet/releases'
+        try: download(f'{releases_url}/download/{version}/model.zip', f'{cache}/model-{version}.zip', f'Model', overwrite=True)  
+        except FileNotFoundError as e: sys.exit(print(f'Could not download model version `{version}`. Please check that it exists at {releases_url}.'))
 
       if os.path.isdir(modeldir): shutil.rmtree(modeldir)
       with zipfile.ZipFile(f'{cache}/model-{version}.zip', 'r') as zip_ref:

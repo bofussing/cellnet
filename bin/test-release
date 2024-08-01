@@ -16,5 +16,5 @@ cd ~/cellnet
 #git switch main
 #git pull
 bin/install
-python cellnet/release.py "$testimage" latest
+python cellnet/release.py latest "$testimage"
 echo "PLEASE check if counts are correct before pushing. (Remember to choose the correct branch.)"
