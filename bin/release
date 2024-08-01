@@ -1,26 +1,5 @@
-#!/bin/bash
+cd "$path"
+zip -r model.zip model_export
 
-if [ -f release.zip ]; then rm release.zip; fi
-
-path="$1"
-modeltag="$2"
-
-# read model api version from cellnet/__init__.py
-modelapi=$(grep -oP "__model_api_version__ = '\K[^']+" cellnet/__init__.py)
-version="$modelapi-$(date +%y%m%d)"
-if [ -n "$modeltag" ]; then version="$version-$modeltag"; fi
-
-
-# if either path or version are empty
-if [ -z "$path" ] || [ -z "$version" ]; then
-    echo "Usage: $0 <path to release's results folder> <version tag>"
-    exit 1
-fi
-
-if [ -d model_export ]; then rm -rf model_export; fi
-cp -r "$path/model_export" model_export
-
-zip -r model.zip "model_export"
-rm -rf "model_export"
-
-gh release create "$version" "model.zip" -t "$version"
+#branch="$(git rev-parse --abbrev-ref HEAD)"
+gh release create "$version" model.zip -t "$version" # --target "$branch" # --latest
