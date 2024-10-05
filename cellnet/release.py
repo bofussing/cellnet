@@ -87,7 +87,7 @@ def init_model(version:str|None='latest', keep_download_cache=True):
   return model.to(DEVICE)
 
 def load_image(image_file_descriptor, model_settings):
-  X = np.array(Image.open(image_file_descriptor))
+  X = np.array(Image.open(image_file_descriptor))[..., [0,1,2]]
   match model_settings['xnorm_type']:
     case 'imagenet': 
       m, s = [np.array(model_settings['xnorm_params'][k], dtype=np.float32)  * 255   for k in ('mean', 'std')]
